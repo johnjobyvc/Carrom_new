@@ -418,40 +418,15 @@ function loop() {
   requestAnimationFrame(loop);
 }
 
-canvas.addEventListener('mousedown', (e) => {
-  if (state.moving || !state.mode) return;
-  if (e.button !== 0) return;
+function getCanvasCoords(e) {
   const rect = canvas.getBoundingClientRect();
-  const x = ((e.clientX - rect.left) * BOARD.w) / rect.width;
-  const y = ((e.clientY - rect.top) * BOARD.h) / rect.height;
-  const striker = state.objects.find((o) => o.type === 'striker');
-  const lineY = currentStrikerLineY();
+  return {
+    x: ((e.clientX - rect.left) * BOARD.w) / rect.width,
+    y: ((e.clientY - rect.top) * BOARD.h) / rect.height,
+  };
+}
 
-  if (Math.abs(y - lineY) <= 18) {
-    striker.x = clampStrikerX(x);
-    striker.y = lineY;
-    return;
-  }
-
-  if (Math.hypot(x - striker.x, y - striker.y) <= striker.r + 8) {
-    state.aiming = true;
-    state.aimPoint = { x, y };
-    state.shotPower = 0;
-  }
-});
-
-canvas.addEventListener('mousemove', (e) => {
-  if (!state.aiming) return;
-  const rect = canvas.getBoundingClientRect();
-  const x = ((e.clientX - rect.left) * BOARD.w) / rect.width;
-  const y = ((e.clientY - rect.top) * BOARD.h) / rect.height;
-  state.aimPoint = { x, y };
-  const striker = state.objects.find((o) => o.type === 'striker');
-  const dragDistance = Math.hypot(striker.x - x, striker.y - y);
-  state.shotPower = Math.min(22, dragDistance / 8);
-});
-
-canvas.addEventListener('mouseup', () => {
+function releaseShot() {
   if (!state.aiming || state.moving) return;
   const striker = state.objects.find((o) => o.type === 'striker');
   const dx = striker.x - state.aimPoint.x;
@@ -466,7 +441,40 @@ canvas.addEventListener('mouseup', () => {
   state.aimPoint = null;
   state.shotPower = 0;
   state.moving = true;
+}
+
+canvas.addEventListener('mousedown', (e) => {
+  if (state.moving || !state.mode) return;
+  if (e.button !== 0) return;
+  const { x, y } = getCanvasCoords(e);
+  const striker = state.objects.find((o) => o.type === 'striker');
+  const lineY = currentStrikerLineY();
+
+  if (Math.hypot(x - striker.x, y - striker.y) <= striker.r + 8) {
+    state.aiming = true;
+    state.aimPoint = { x, y };
+    state.shotPower = 0;
+    return;
+  }
+
+  if (Math.abs(y - lineY) <= 18) {
+    striker.x = clampStrikerX(x);
+    striker.y = lineY;
+    return;
+  }
 });
+
+canvas.addEventListener('mousemove', (e) => {
+  if (!state.aiming) return;
+  const { x, y } = getCanvasCoords(e);
+  state.aimPoint = { x, y };
+  const striker = state.objects.find((o) => o.type === 'striker');
+  const dragDistance = Math.hypot(striker.x - x, striker.y - y);
+  state.shotPower = Math.min(22, dragDistance / 8);
+});
+
+canvas.addEventListener('mouseup', releaseShot);
+window.addEventListener('mouseup', releaseShot);
 
 modeButtons.forEach((b) => b.addEventListener('click', () => initMode(b.dataset.mode)));
 practiceBtn.addEventListener('click', () => initMode('practice'));
