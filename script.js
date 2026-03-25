@@ -418,25 +418,22 @@ function loop() {
   requestAnimationFrame(loop);
 }
 
-canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-
 canvas.addEventListener('mousedown', (e) => {
   if (state.moving || !state.mode) return;
+  if (e.button !== 0) return;
   const rect = canvas.getBoundingClientRect();
   const x = ((e.clientX - rect.left) * BOARD.w) / rect.width;
   const y = ((e.clientY - rect.top) * BOARD.h) / rect.height;
   const striker = state.objects.find((o) => o.type === 'striker');
   const lineY = currentStrikerLineY();
 
-  if (e.button === 0) {
-    if (Math.abs(y - lineY) <= 18) {
-      striker.x = clampStrikerX(x);
-      striker.y = lineY;
-    }
+  if (Math.abs(y - lineY) <= 18) {
+    striker.x = clampStrikerX(x);
+    striker.y = lineY;
     return;
   }
 
-  if (e.button === 2 && Math.hypot(x - striker.x, y - striker.y) <= striker.r + 8) {
+  if (Math.hypot(x - striker.x, y - striker.y) <= striker.r + 8) {
     state.aiming = true;
     state.aimPoint = { x, y };
     state.shotPower = 0;
