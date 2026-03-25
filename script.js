@@ -149,9 +149,19 @@ function startTurnTimer() {
   }, 1000);
 }
 
+function placeStrikerForCurrentTurn(center = true) {
+  const striker = state.objects.find((o) => o.type === 'striker');
+  if (!striker) return;
+  if (center) striker.x = BOARD.w / 2;
+  striker.y = currentStrikerLineY();
+  striker.vx = 0;
+  striker.vy = 0;
+}
+
 function switchTurn() {
   state.turn = (state.turn + 1) % 2;
   state.turnTime = 25;
+  placeStrikerForCurrentTurn();
 }
 
 function pockets() {
@@ -297,13 +307,10 @@ function physicsStep() {
     if (state.pendingTurnSwitch) {
       switchTurn();
       state.pendingTurnSwitch = false;
-    }
-    const striker = state.objects.find((o) => o.type === 'striker');
-    striker.x = BOARD.w / 2;
-    striker.y = currentStrikerLineY();
-    state.lastShotPower = 0;
-    if ((state.mode === 'ai' || state.mode === 'online') && state.turn === 1) {
-      aiShoot();
+      state.lastShotPower = 0;
+      if ((state.mode === 'ai' || state.mode === 'online') && state.turn === 1) {
+        aiShoot();
+      }
     }
   }
 }
