@@ -17,8 +17,13 @@ const BOARD = { w: 760, h: 760, margin: 60 };
 const POCKET_R = 26;
 const COIN_R = 14;
 const STRIKER_R = 16;
+const STRIKER_LINE_TOP = 110;
+const STRIKER_LINE_BOTTOM = BOARD.h - 110;
+const STRIKER_LINE_MIN_X = 150;
+const STRIKER_LINE_MAX_X = BOARD.w - 150;
 const FRICTION = 0.991;
 const STOP_EPS = 0.08;
+const ASSIST_POWER_THRESHOLD = 6.5;
 
 const state = {
   mode: null,
@@ -27,7 +32,10 @@ const state = {
   timerRef: null,
   moving: false,
   aiming: false,
-  aimStart: null,
+  aimPoint: null,
+  shotPower: 0,
+  lastShotPower: 0,
+  pendingTurnSwitch: false,
   players: [
     { name: 'Player 1', score: 0, wins: 0, losses: 0, assigned: 'black' },
     { name: 'Player 2', score: 0, wins: 0, losses: 0, assigned: 'white' },
@@ -67,6 +75,7 @@ function saveStats() {
 
 function resetBoard() {
   state.objects = [];
+  state.pendingTurnSwitch = false;
 
   const centerX = BOARD.w / 2;
   const centerY = BOARD.h / 2;
@@ -96,7 +105,7 @@ function resetBoard() {
     type: 'striker',
     color: '#f4bf5b',
     x: centerX,
-    y: BOARD.h - 110,
+    y: STRIKER_LINE_BOTTOM,
     vx: 0,
     vy: 0,
     r: STRIKER_R,
@@ -104,9 +113,18 @@ function resetBoard() {
   });
 }
 
+function currentStrikerLineY() {
+  return state.turn === 0 ? STRIKER_LINE_BOTTOM : STRIKER_LINE_TOP;
+}
+
+function clampStrikerX(x) {
+  return Math.min(STRIKER_LINE_MAX_X, Math.max(STRIKER_LINE_MIN_X, x));
+}
+
 function initMode(mode) {
   state.mode = mode;
   state.turn = 0;
+  state.pendingTurnSwitch = false;
   state.players[0].score = 0;
   state.players[1].score = 0;
   state.players[0].name = usernameInput.value || 'Player 1';
@@ -158,6 +176,17 @@ function drawBoard() {
   ctx.arc(BOARD.w / 2, BOARD.h / 2, 68, 0, Math.PI * 2);
   ctx.stroke();
 
+  ctx.setLineDash([8, 7]);
+  ctx.strokeStyle = '#3a2b18';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(STRIKER_LINE_MIN_X, STRIKER_LINE_TOP);
+  ctx.lineTo(STRIKER_LINE_MAX_X, STRIKER_LINE_TOP);
+  ctx.moveTo(STRIKER_LINE_MIN_X, STRIKER_LINE_BOTTOM);
+  ctx.lineTo(STRIKER_LINE_MAX_X, STRIKER_LINE_BOTTOM);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
   pockets().forEach((p) => {
     ctx.fillStyle = '#1a1a1a';
     ctx.beginPath();
@@ -180,14 +209,21 @@ function drawObjects() {
     }
   }
 
-  if (state.aiming && state.aimStart) {
+  if (state.aiming && state.aimPoint) {
     const striker = state.objects.find((o) => o.type === 'striker');
     ctx.strokeStyle = '#0ef';
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(striker.x, striker.y);
-    ctx.lineTo(state.aimStart.x, state.aimStart.y);
+    ctx.lineTo(state.aimPoint.x, state.aimPoint.y);
     ctx.stroke();
+
+    ctx.fillStyle = '#0f1722dd';
+    ctx.fillRect(striker.x - 48, striker.y - 56, 96, 26);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 14px Inter, system-ui, Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(`Power: ${state.shotPower.toFixed(1)}`, striker.x, striker.y - 38);
   }
 }
 
@@ -230,6 +266,27 @@ function physicsStep() {
         a.vy -= p * ny;
         b.vx += p * nx;
         b.vy += p * ny;
+
+        const striker = a.type === 'striker' ? a : b.type === 'striker' ? b : null;
+        const coin = striker && striker === a ? b : striker && striker === b ? a : null;
+        if (striker && coin && coin.type !== 'striker' && state.lastShotPower >= ASSIST_POWER_THRESHOLD) {
+          const nearestPocket = pockets().reduce((best, pocket) => {
+            const dist = Math.hypot(coin.x - pocket.x, coin.y - pocket.y);
+            return !best || dist < best.dist ? { ...pocket, dist } : best;
+          }, null);
+          const toCoinX = coin.x - striker.x;
+          const toCoinY = coin.y - striker.y;
+          const toPocketX = nearestPocket.x - coin.x;
+          const toPocketY = nearestPocket.y - coin.y;
+          const toCoinD = Math.max(1, Math.hypot(toCoinX, toCoinY));
+          const toPocketD = Math.max(1, Math.hypot(toPocketX, toPocketY));
+          const alignment = (toCoinX * toPocketX + toCoinY * toPocketY) / (toCoinD * toPocketD);
+          if (alignment > 0.87) {
+            const assistSpeed = 0.12 * state.lastShotPower;
+            coin.vx += (toPocketX / toPocketD) * assistSpeed;
+            coin.vy += (toPocketY / toPocketD) * assistSpeed;
+          }
+        }
       }
     }
   }
@@ -237,9 +294,14 @@ function physicsStep() {
   handlePocketing();
   state.moving = moving;
   if (!moving) {
+    if (state.pendingTurnSwitch) {
+      switchTurn();
+      state.pendingTurnSwitch = false;
+    }
     const striker = state.objects.find((o) => o.type === 'striker');
     striker.x = BOARD.w / 2;
-    striker.y = state.turn === 0 ? BOARD.h - 110 : 110;
+    striker.y = currentStrikerLineY();
+    state.lastShotPower = 0;
     if ((state.mode === 'ai' || state.mode === 'online') && state.turn === 1) {
       aiShoot();
     }
@@ -264,8 +326,6 @@ function handlePocketing() {
   }
 
   if (pocketedThisTurn >= 3) state.stats.precisionTurns += 1;
-
-  if (!state.moving && pocketedThisTurn === 0) switchTurn();
 
   evaluateWin();
 }
@@ -306,6 +366,8 @@ function aiShoot() {
   const pwr = Math.min(18, 9 + Math.random() * 6);
   striker.vx = (dx / d) * pwr;
   striker.vy = (dy / d) * pwr;
+  state.lastShotPower = pwr;
+  state.pendingTurnSwitch = true;
   state.moving = true;
 }
 
@@ -356,15 +418,28 @@ function loop() {
   requestAnimationFrame(loop);
 }
 
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
 canvas.addEventListener('mousedown', (e) => {
   if (state.moving || !state.mode) return;
   const rect = canvas.getBoundingClientRect();
   const x = ((e.clientX - rect.left) * BOARD.w) / rect.width;
   const y = ((e.clientY - rect.top) * BOARD.h) / rect.height;
   const striker = state.objects.find((o) => o.type === 'striker');
-  if (Math.hypot(x - striker.x, y - striker.y) <= striker.r + 8) {
+  const lineY = currentStrikerLineY();
+
+  if (e.button === 0) {
+    if (Math.abs(y - lineY) <= 18) {
+      striker.x = clampStrikerX(x);
+      striker.y = lineY;
+    }
+    return;
+  }
+
+  if (e.button === 2 && Math.hypot(x - striker.x, y - striker.y) <= striker.r + 8) {
     state.aiming = true;
-    state.aimStart = { x, y };
+    state.aimPoint = { x, y };
+    state.shotPower = 0;
   }
 });
 
@@ -373,20 +448,26 @@ canvas.addEventListener('mousemove', (e) => {
   const rect = canvas.getBoundingClientRect();
   const x = ((e.clientX - rect.left) * BOARD.w) / rect.width;
   const y = ((e.clientY - rect.top) * BOARD.h) / rect.height;
-  state.aimStart = { x, y };
+  state.aimPoint = { x, y };
+  const striker = state.objects.find((o) => o.type === 'striker');
+  const dragDistance = Math.hypot(striker.x - x, striker.y - y);
+  state.shotPower = Math.min(22, dragDistance / 8);
 });
 
 canvas.addEventListener('mouseup', () => {
   if (!state.aiming || state.moving) return;
   const striker = state.objects.find((o) => o.type === 'striker');
-  const dx = striker.x - state.aimStart.x;
-  const dy = striker.y - state.aimStart.y;
+  const dx = striker.x - state.aimPoint.x;
+  const dy = striker.y - state.aimPoint.y;
   const d = Math.max(1, Math.hypot(dx, dy));
   const pwr = Math.min(22, d / 8);
   striker.vx = (dx / d) * pwr;
   striker.vy = (dy / d) * pwr;
+  state.lastShotPower = pwr;
+  state.pendingTurnSwitch = true;
   state.aiming = false;
-  state.aimStart = null;
+  state.aimPoint = null;
+  state.shotPower = 0;
   state.moving = true;
 });
 
