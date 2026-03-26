@@ -4,6 +4,7 @@ const ctx = canvas.getContext('2d');
 const modeButtons = document.querySelectorAll('[data-mode]');
 const practiceBtn = document.getElementById('practiceBtn');
 const modeLabel = document.getElementById('modeLabel');
+const levelLabel = document.getElementById('levelLabel');
 const turnLabel = document.getElementById('turnLabel');
 const timerLabel = document.getElementById('timerLabel');
 const statsList = document.getElementById('stats');
@@ -12,26 +13,48 @@ const scoreboardList = document.getElementById('scoreboard');
 const usernameInput = document.getElementById('username');
 const saveProfileBtn = document.getElementById('saveProfile');
 const themeSelect = document.getElementById('themeSelect');
+const levelSelect = document.getElementById('levelSelect');
 
 const BOARD = { w: 760, h: 760, margin: 60 };
-const POCKET_R = 26;
+const BASE_POCKET_R = 26;
 const COIN_R = 14;
 const STRIKER_R = 16;
 const STRIKER_LINE_TOP = 110;
 const STRIKER_LINE_BOTTOM = BOARD.h - 110;
 const STRIKER_LINE_MIN_X = 150;
 const STRIKER_LINE_MAX_X = BOARD.w - 150;
-const FRICTION = 0.991;
+const BASE_FRICTION = 0.991;
 const STOP_EPS = 0.08;
-const ASSIST_POWER_THRESHOLD = 6.5;
+const BASE_ASSIST_POWER_THRESHOLD = 6.5;
 const MAX_SHOT_POWER_PERCENT = 100;
 const MAX_STRIKER_SHOT_SPEED = 22;
 const PLAYFIELD_MIN = 24;
 const PLAYFIELD_MAX_X = BOARD.w - PLAYFIELD_MIN;
 const PLAYFIELD_MAX_Y = BOARD.h - PLAYFIELD_MIN;
+const LEVEL_SETTINGS = {
+  1: {
+    turnTime: 25,
+    pocketRadius: BASE_POCKET_R,
+    friction: BASE_FRICTION,
+    assistThreshold: BASE_ASSIST_POWER_THRESHOLD,
+    assistMultiplier: 0.12,
+    aiRandomness: 0.38,
+    aiPowerBoost: 0,
+  },
+  2: {
+    turnTime: 18,
+    pocketRadius: 22,
+    friction: 0.987,
+    assistThreshold: 9,
+    assistMultiplier: 0.08,
+    aiRandomness: 0.14,
+    aiPowerBoost: 1.5,
+  },
+};
 
 const state = {
   mode: null,
+  level: 1,
   turn: 0,
   turnTime: 25,
   timerRef: null,
@@ -55,6 +78,10 @@ const state = {
   },
   objects: [],
 };
+
+function levelConfig() {
+  return LEVEL_SETTINGS[state.level] || LEVEL_SETTINGS[1];
+}
 
 function saveStats() {
   Object.entries(state.stats).forEach(([k, v]) => localStorage.setItem(k, String(v)));
@@ -110,6 +137,7 @@ function clampStrikerX(x) {
 
 function initMode(mode) {
   state.mode = mode;
+  state.level = Number(levelSelect.value) || 1;
   state.turn = 0;
   state.pendingTurnSwitch = false;
   state.players[0].score = 0;
@@ -117,6 +145,7 @@ function initMode(mode) {
   state.players[0].name = usernameInput.value || 'Player 1';
   state.players[1].name = mode === 'ai' ? 'AI Bot' : mode === 'online' ? 'Online Rival' : 'Player 2';
   modeLabel.textContent = `Mode: ${mode}`;
+  levelLabel.textContent = `Game Level: ${state.level}`;
   resetBoard();
   startTurnTimer();
   renderPanels();
@@ -124,7 +153,7 @@ function initMode(mode) {
 
 function startTurnTimer() {
   clearInterval(state.timerRef);
-  state.turnTime = 25;
+  state.turnTime = levelConfig().turnTime;
   timerLabel.textContent = `Turn Timer: ${state.turnTime}s`;
   state.timerRef = setInterval(() => {
     if (state.moving) return;
@@ -147,7 +176,7 @@ function placeStrikerForCurrentTurn(center = true) {
 
 function switchTurn() {
   state.turn = (state.turn + 1) % 2;
-  state.turnTime = 25;
+  state.turnTime = levelConfig().turnTime;
   state.aiming = false;
   state.aimPoint = null;
   state.shotPower = 0;
@@ -199,7 +228,7 @@ function drawBoard() {
   pockets().forEach((p) => {
     ctx.fillStyle = '#1a1a1a';
     ctx.beginPath();
-    ctx.arc(p.x, p.y, POCKET_R, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, levelConfig().pocketRadius, 0, Math.PI * 2);
     ctx.fill();
   });
 }
@@ -242,8 +271,8 @@ function physicsStep() {
     if (!o.active) continue;
     o.x += o.vx;
     o.y += o.vy;
-    o.vx *= FRICTION;
-    o.vy *= FRICTION;
+    o.vx *= levelConfig().friction;
+    o.vy *= levelConfig().friction;
     if (Math.abs(o.vx) < STOP_EPS) o.vx = 0;
     if (Math.abs(o.vy) < STOP_EPS) o.vy = 0;
     moving ||= o.vx !== 0 || o.vy !== 0;
@@ -278,7 +307,7 @@ function physicsStep() {
 
         const striker = a.type === 'striker' ? a : b.type === 'striker' ? b : null;
         const coin = striker && striker === a ? b : striker && striker === b ? a : null;
-        if (striker && coin && coin.type !== 'striker' && state.lastShotPower >= ASSIST_POWER_THRESHOLD) {
+        if (striker && coin && coin.type !== 'striker' && state.lastShotPower >= levelConfig().assistThreshold) {
           const nearestPocket = pockets().reduce((best, pocket) => {
             const dist = Math.hypot(coin.x - pocket.x, coin.y - pocket.y);
             return !best || dist < best.dist ? { ...pocket, dist } : best;
@@ -291,7 +320,7 @@ function physicsStep() {
           const toPocketD = Math.max(1, Math.hypot(toPocketX, toPocketY));
           const alignment = (toCoinX * toPocketX + toCoinY * toPocketY) / (toCoinD * toPocketD);
           if (alignment > 0.87) {
-            const assistSpeed = 0.12 * state.lastShotPower;
+            const assistSpeed = levelConfig().assistMultiplier * state.lastShotPower;
             coin.vx += (toPocketX / toPocketD) * assistSpeed;
             coin.vy += (toPocketY / toPocketD) * assistSpeed;
           }
@@ -318,7 +347,7 @@ function handlePocketing() {
   for (const o of state.objects) {
     if (!o.active || o.type === 'striker') continue;
     for (const p of pks) {
-      if (Math.hypot(o.x - p.x, o.y - p.y) < POCKET_R) {
+      if (Math.hypot(o.x - p.x, o.y - p.y) < levelConfig().pocketRadius) {
         o.active = false;
         pocketedThisTurn += 1;
         const current = state.players[state.turn];
@@ -362,11 +391,22 @@ function aiShoot() {
   const striker = state.objects.find((o) => o.type === 'striker');
   const targets = state.objects.filter((o) => o.active && o.type !== 'striker');
   if (!targets.length) return;
-  const t = targets[Math.floor(Math.random() * targets.length)];
-  const dx = t.x - striker.x;
-  const dy = t.y - striker.y;
+  const pks = pockets();
+  const bestTarget = targets
+    .map((coin) => {
+      const nearestPocketDist = pks.reduce((best, pocket) => {
+        const dist = Math.hypot(coin.x - pocket.x, coin.y - pocket.y);
+        return Math.min(best, dist);
+      }, Number.POSITIVE_INFINITY);
+      return { coin, nearestPocketDist };
+    })
+    .sort((a, b) => a.nearestPocketDist - b.nearestPocketDist)[0].coin;
+  const randomTarget = targets[Math.floor(Math.random() * targets.length)];
+  const target = Math.random() < levelConfig().aiRandomness ? randomTarget : bestTarget;
+  const dx = target.x - striker.x;
+  const dy = target.y - striker.y;
   const d = Math.max(1, Math.hypot(dx, dy));
-  const pwr = Math.min(18, 9 + Math.random() * 6);
+  const pwr = Math.min(19, 9 + Math.random() * 6 + levelConfig().aiPowerBoost);
   striker.vx = (dx / d) * pwr;
   striker.vy = (dy / d) * pwr;
   state.lastShotPower = pwr;
@@ -518,6 +558,11 @@ themeSelect.addEventListener('change', () => {
   if (themeSelect.value === 'mint') document.body.classList.add('theme-mint');
 });
 
+levelSelect.addEventListener('change', () => {
+  levelLabel.textContent = `Game Level: ${Number(levelSelect.value) || 1}`;
+});
+
 resetBoard();
+levelLabel.textContent = `Game Level: ${state.level}`;
 renderPanels();
 loop();
