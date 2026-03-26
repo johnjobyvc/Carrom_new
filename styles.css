@@ -8,44 +8,66 @@
 }
 
 * { box-sizing: border-box; }
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   margin: 0;
   font-family: Inter, system-ui, Arial, sans-serif;
+  font-size: 12px;
   background: var(--bg);
   color: var(--text);
 }
 
+h1,
+h2,
+h3,
+label,
+p,
+li,
+div,
+button,
+input,
+select {
+  font-size: 0.9rem;
+}
+
 .topbar {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   gap: 1rem;
-  padding: 0.8rem 1rem;
+  padding: 0.55rem 0.8rem;
   background: var(--surface);
   border-bottom: 1px solid #364152;
 }
 
-.profile { display: flex; gap: 0.5rem; align-items: flex-end; }
-.profile input { padding: 0.3rem; }
+.profile { display: flex; gap: 0.4rem; align-items: flex-end; }
+.profile input { padding: 0.2rem; }
 
 .layout {
   display: grid;
-  grid-template-columns: 300px 1fr 260px;
-  gap: 1rem;
-  padding: 1rem;
+  grid-template-columns: 260px 1fr;
+  gap: 0.8rem;
+  padding: 0.8rem;
+  height: calc(100vh - 52px);
 }
+
 .panel {
   background: var(--surface);
   border: 1px solid #2f3d4f;
   border-radius: 10px;
-  padding: 1rem;
-  max-height: calc(100vh - 120px);
-  overflow: auto;
+  padding: 0.8rem;
+  overflow: hidden;
 }
 
-.btn-group { display: grid; gap: 0.5rem; margin-bottom: 1rem; }
+.btn-group { display: grid; gap: 0.4rem; margin-bottom: 0.8rem; }
 button {
-  padding: 0.6rem;
+  padding: 0.45rem;
   border-radius: 6px;
   border: none;
   background: var(--accent);
@@ -54,25 +76,30 @@ button {
   cursor: pointer;
 }
 
-.board-wrap { text-align: center; }
+.board-wrap {
+  text-align: center;
+  overflow: hidden;
+}
+
 .game-meta {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.25rem;
   font-weight: 600;
 }
+
 #board {
-  width: min(90vw, 760px);
-  height: min(90vw, 760px);
+  width: min(82vh, 80vw, 760px);
+  height: min(82vh, 80vw, 760px);
   border-radius: 12px;
   border: 4px solid var(--board-edge);
   background: var(--board);
   box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+  touch-action: none;
 }
 
-.hint { color: #d4d7db; }
-
-li { margin-bottom: 0.35rem; }
+.hint { color: #d4d7db; margin-top: 0.45rem; }
+li { margin-bottom: 0.25rem; }
 
 .theme-night {
   --bg: #070b15;
@@ -93,5 +120,8 @@ li { margin-bottom: 0.35rem; }
 }
 
 @media (max-width: 1200px) {
-  .layout { grid-template-columns: 1fr; }
+  .layout {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
 }

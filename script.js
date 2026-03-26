@@ -56,24 +56,6 @@ const state = {
   objects: [],
 };
 
-const leaderboards = {
-  global: [
-    { name: 'Alex', points: 1990 },
-    { name: 'Mina', points: 1760 },
-    { name: 'You', points: 900 },
-  ],
-  weekly: [
-    { name: 'You', points: 120 },
-    { name: 'Sam', points: 100 },
-    { name: 'Ivy', points: 80 },
-  ],
-  friends: [
-    { name: 'Ravi', points: 300 },
-    { name: 'You', points: 240 },
-    { name: 'Dee', points: 160 },
-  ],
-};
-
 function saveStats() {
   Object.entries(state.stats).forEach(([k, v]) => localStorage.setItem(k, String(v)));
 }
@@ -166,13 +148,18 @@ function placeStrikerForCurrentTurn(center = true) {
 function switchTurn() {
   state.turn = (state.turn + 1) % 2;
   state.turnTime = 25;
-  placeStrikerForCurrentTurn();
+  state.aiming = false;
+  state.aimPoint = null;
+  state.shotPower = 0;
+  placeStrikerForCurrentTurn(true);
 }
 
 function advanceTurnAndHandleAutomation() {
   switchTurn();
   if ((state.mode === 'ai' || state.mode === 'online') && state.turn === 1 && !state.moving) {
-    aiShoot();
+    setTimeout(() => {
+      if (!state.moving && state.turn === 1) aiShoot();
+    }, 120);
   }
 }
 
@@ -403,7 +390,6 @@ function renderPanels() {
     .join('');
 
   updateAchievements();
-  renderLeaderboards();
 }
 
 function updateAchievements() {
@@ -414,16 +400,6 @@ function updateAchievements() {
   achievementsList.innerHTML = unlocked.length
     ? unlocked.map((a) => `<li>${a}</li>`).join('')
     : '<li>No achievements yet.</li>';
-}
-
-function renderLeaderboards() {
-  const paint = (id, arr) => {
-    const node = document.getElementById(id);
-    node.innerHTML = arr.map((r) => `<li>${r.name} - ${r.points}</li>`).join('');
-  };
-  paint('globalLeaderboard', leaderboards.global);
-  paint('weeklyLeaderboard', leaderboards.weekly);
-  paint('friendLeaderboard', leaderboards.friends);
 }
 
 function loop() {
@@ -493,6 +469,7 @@ function releaseShot() {
 
 canvas.addEventListener('mousedown', (e) => {
   if (state.moving || !state.mode) return;
+  if ((state.mode === 'ai' || state.mode === 'online') && state.turn === 1) return;
   if (e.button !== 0) return;
   const { x, y } = getCanvasCoords(e);
   const striker = state.objects.find((o) => o.type === 'striker');
@@ -522,6 +499,11 @@ canvas.addEventListener('mousemove', (e) => {
 
 canvas.addEventListener('mouseup', releaseShot);
 window.addEventListener('mouseup', releaseShot);
+
+
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+}, { passive: false });
 
 modeButtons.forEach((b) => b.addEventListener('click', () => initMode(b.dataset.mode)));
 practiceBtn.addEventListener('click', () => initMode('practice'));
