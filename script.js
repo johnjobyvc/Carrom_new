@@ -13,6 +13,7 @@ const usernameInput = document.getElementById('username');
 const saveProfileBtn = document.getElementById('saveProfile');
 const themeSelect = document.getElementById('themeSelect');
 const levelSelect = document.getElementById('levelSelect');
+const coinColorSelect = document.getElementById('coinColorSelect');
 
 const BOARD = { w: 760, h: 760, margin: 60 };
 const BASE_POCKET_R = 26;
@@ -64,9 +65,10 @@ const state = {
   lastShotPower: 0,
   pendingTurnSwitch: false,
   players: [
-    { name: 'Player 1', score: 0, wins: 0, losses: 0, assigned: 'black' },
-    { name: 'Player 2', score: 0, wins: 0, losses: 0, assigned: 'white' },
+    { name: 'Player 1', score: 0, wins: 0, losses: 0, assigned: 'black', colorPocketed: 0, queenPocketed: 0 },
+    { name: 'Player 2', score: 0, wins: 0, losses: 0, assigned: 'white', colorPocketed: 0, queenPocketed: 0 },
   ],
+  lastWinnerName: localStorage.getItem('lastWinnerName') || '',
   stats: {
     matchesPlayed: Number(localStorage.getItem('matchesPlayed') || 0),
     wins: Number(localStorage.getItem('wins') || 0),
@@ -139,8 +141,16 @@ function initMode(mode) {
   state.level = Number(levelSelect.value) || 1;
   state.turn = 0;
   state.pendingTurnSwitch = false;
+  const selectedColor = coinColorSelect.value === 'white' ? 'white' : 'black';
+  const oppositeColor = selectedColor === 'black' ? 'white' : 'black';
+  state.players[0].assigned = selectedColor;
+  state.players[1].assigned = oppositeColor;
   state.players[0].score = 0;
   state.players[1].score = 0;
+  state.players[0].colorPocketed = 0;
+  state.players[1].colorPocketed = 0;
+  state.players[0].queenPocketed = 0;
+  state.players[1].queenPocketed = 0;
   state.players[0].name = usernameInput.value || 'Player 1';
   state.players[1].name = mode === 'ai' ? 'AI Bot' : mode === 'online' ? 'Online Rival' : 'Player 2';
   modeLabel.textContent = `Mode: ${mode}`;
@@ -347,11 +357,23 @@ function handlePocketing() {
     if (!o.active || o.type === 'striker') continue;
     for (const p of pks) {
       if (Math.hypot(o.x - p.x, o.y - p.y) < levelConfig().pocketRadius) {
-        o.active = false;
-        pocketedThisTurn += 1;
         const current = state.players[state.turn];
-        if (o.type === 'queen') current.score += 2;
-        else current.score += 1;
+        const isOwnColor = o.type === current.assigned;
+        const isQueen = o.type === 'queen';
+        if (isOwnColor || isQueen) {
+          o.active = false;
+          pocketedThisTurn += 1;
+          if (isQueen) {
+            current.score += 2;
+            current.queenPocketed += 1;
+          } else {
+            current.score += 1;
+            current.colorPocketed += 1;
+          }
+        } else {
+          respotCoin(o);
+        }
+        break;
       }
     }
   }
@@ -361,19 +383,44 @@ function handlePocketing() {
   evaluateWin();
 }
 
+function respotCoin(coin) {
+  coin.vx = 0;
+  coin.vy = 0;
+  const centerX = BOARD.w / 2;
+  const centerY = BOARD.h / 2;
+  const maxAttempts = 30;
+
+  for (let i = 0; i < maxAttempts; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const radius = 24 + Math.random() * 54;
+    const testX = centerX + Math.cos(angle) * radius;
+    const testY = centerY + Math.sin(angle) * radius;
+    const collides = state.objects.some(
+      (obj) => obj !== coin && obj.active && Math.hypot(obj.x - testX, obj.y - testY) < obj.r + coin.r + 3,
+    );
+    if (!collides) {
+      coin.x = testX;
+      coin.y = testY;
+      return;
+    }
+  }
+
+  coin.x = centerX;
+  coin.y = centerY;
+}
+
 function evaluateWin() {
-  const remainBlack = state.objects.some((o) => o.active && o.type === 'black');
-  const remainWhite = state.objects.some((o) => o.active && o.type === 'white');
-  if (remainBlack || remainWhite) return;
+  const winner = state.players.find((p) => p.colorPocketed >= 9 && p.queenPocketed >= 1);
+  if (!winner) return;
 
   clearInterval(state.timerRef);
   const p1 = state.players[0];
-  const p2 = state.players[1];
-  const winner = p1.score >= p2.score ? p1 : p2;
-  const loser = winner === p1 ? p2 : p1;
+  const loser = winner === p1 ? state.players[1] : p1;
 
   alert(`${winner.name} wins! +5 bonus points.`);
   winner.score += 5;
+  state.lastWinnerName = winner.name;
+  localStorage.setItem('lastWinnerName', winner.name);
   state.stats.matchesPlayed += 1;
   if (winner === p1) state.stats.wins += 1;
   else state.stats.losses += 1;
@@ -388,7 +435,10 @@ function evaluateWin() {
 
 function aiShoot() {
   const striker = state.objects.find((o) => o.type === 'striker');
-  const targets = state.objects.filter((o) => o.active && o.type !== 'striker');
+  const aiPlayer = state.players[1];
+  const targets = state.objects.filter(
+    (o) => o.active && (o.type === aiPlayer.assigned || o.type === 'queen'),
+  );
   if (!targets.length) return;
   const pks = pockets();
   const bestTarget = targets
@@ -416,7 +466,10 @@ function aiShoot() {
 function renderPanels() {
   turnLabel.textContent = `Turn: ${state.players[state.turn]?.name || '-'}`;
   scoreboardList.innerHTML = state.players
-    .map((p) => `<li>${p.name}: ${p.score} pts (W:${p.wins} L:${p.losses})</li>`)
+    .map(
+      (p) =>
+        `<li>${p.name}: ${p.score} pts | Color: ${p.assigned} (${p.colorPocketed}/9) | Red: ${p.queenPocketed}/1 (W:${p.wins} L:${p.losses})</li>`,
+    )
     .join('');
 
   updateAchievements();
@@ -427,6 +480,7 @@ function updateAchievements() {
   if (state.stats.wins >= 1) unlocked.push('First Win');
   if (state.stats.wins >= 50) unlocked.push('Carrom Master');
   if (state.stats.precisionTurns >= 1) unlocked.push('Precision Shot');
+  if (state.lastWinnerName) unlocked.push(`Last Winner: ${state.lastWinnerName}`);
   achievementsList.innerHTML = unlocked.length
     ? unlocked.map((a) => `<li>${a}</li>`).join('')
     : '<li>No achievements yet.</li>';
