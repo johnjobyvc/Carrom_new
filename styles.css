@@ -13,6 +13,7 @@ html,
 body {
   height: 100%;
   overflow: hidden;
+  scrollbar-width: none;
 }
 
 body {
@@ -55,6 +56,7 @@ select {
   gap: 0.8rem;
   padding: 0.8rem;
   height: calc(100vh - 52px);
+  overflow: hidden;
 }
 
 .panel {
@@ -63,6 +65,7 @@ select {
   border-radius: 10px;
   padding: 0.8rem;
   overflow: hidden;
+  scrollbar-width: none;
 }
 
 .btn-group { display: grid; gap: 0.4rem; margin-bottom: 0.8rem; }
@@ -77,20 +80,40 @@ button {
 }
 
 .board-wrap {
-  text-align: center;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0.8rem;
   overflow: hidden;
+  min-height: 0;
+}
+
+.board-main {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 0;
 }
 
 .game-meta {
+  width: 220px;
+  flex: 0 0 220px;
   display: flex;
-  justify-content: space-between;
-  margin-bottom: 0.25rem;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 0.45rem;
+  padding: 0.7rem;
+  border-radius: 10px;
+  border: 1px solid #2f3d4f;
+  background: var(--surface);
   font-weight: 600;
 }
 
 #board {
-  width: min(82vh, 80vw, 760px);
-  height: min(82vh, 80vw, 760px);
+  width: min(calc(100vh - 130px), calc(100vw - 520px), 760px);
+  height: min(calc(100vh - 130px), calc(100vw - 520px), 760px);
   border-radius: 12px;
   border: 4px solid var(--board-edge);
   background: var(--board);
@@ -100,6 +123,14 @@ button {
 
 .hint { color: #d4d7db; margin-top: 0.45rem; }
 li { margin-bottom: 0.25rem; }
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+.layout::-webkit-scrollbar,
+.panel::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
 
 .theme-night {
   --bg: #070b15;
@@ -123,5 +154,22 @@ li { margin-bottom: 0.25rem; }
   .layout {
     grid-template-columns: 1fr;
     height: auto;
+  }
+
+  .board-wrap {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .game-meta {
+    width: min(100%, 760px);
+    flex: 0 0 auto;
+    flex-direction: row;
+    justify-content: space-between;
+  }
+
+  #board {
+    width: min(calc(100vh - 260px), 92vw, 760px);
+    height: min(calc(100vh - 260px), 92vw, 760px);
   }
 }
