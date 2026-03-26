@@ -26,7 +26,9 @@ const STOP_EPS = 0.08;
 const ASSIST_POWER_THRESHOLD = 6.5;
 const MAX_SHOT_POWER_PERCENT = 100;
 const MAX_STRIKER_SHOT_SPEED = 22;
-const POWER_FULL_DRAG_DISTANCE = 176;
+const PLAYFIELD_MIN = 24;
+const PLAYFIELD_MAX_X = BOARD.w - PLAYFIELD_MIN;
+const PLAYFIELD_MAX_Y = BOARD.h - PLAYFIELD_MIN;
 
 const state = {
   mode: null,
@@ -147,7 +149,7 @@ function startTurnTimer() {
     state.turnTime -= 1;
     timerLabel.textContent = `Turn Timer: ${state.turnTime}s`;
     if (state.turnTime <= 0) {
-      switchTurn();
+      advanceTurnAndHandleAutomation();
     }
   }, 1000);
 }
@@ -165,6 +167,13 @@ function switchTurn() {
   state.turn = (state.turn + 1) % 2;
   state.turnTime = 25;
   placeStrikerForCurrentTurn();
+}
+
+function advanceTurnAndHandleAutomation() {
+  switchTurn();
+  if ((state.mode === 'ai' || state.mode === 'online') && state.turn === 1 && !state.moving) {
+    aiShoot();
+  }
 }
 
 function pockets() {
@@ -252,8 +261,8 @@ function physicsStep() {
     if (Math.abs(o.vy) < STOP_EPS) o.vy = 0;
     moving ||= o.vx !== 0 || o.vy !== 0;
 
-    if (o.x - o.r < 24 || o.x + o.r > BOARD.w - 24) o.vx *= -1;
-    if (o.y - o.r < 24 || o.y + o.r > BOARD.h - 24) o.vy *= -1;
+    if (o.x - o.r < PLAYFIELD_MIN || o.x + o.r > PLAYFIELD_MAX_X) o.vx *= -1;
+    if (o.y - o.r < PLAYFIELD_MIN || o.y + o.r > PLAYFIELD_MAX_Y) o.vy *= -1;
   }
 
   for (let i = 0; i < state.objects.length; i++) {
@@ -308,12 +317,9 @@ function physicsStep() {
   state.moving = moving;
   if (!moving) {
     if (state.pendingTurnSwitch) {
-      switchTurn();
+      advanceTurnAndHandleAutomation();
       state.pendingTurnSwitch = false;
       state.lastShotPower = 0;
-      if ((state.mode === 'ai' || state.mode === 'online') && state.turn === 1) {
-        aiShoot();
-      }
     }
   }
 }
@@ -436,13 +442,44 @@ function getCanvasCoords(e) {
   };
 }
 
+function getMaxDragDistanceToBorder(striker, aimPoint) {
+  const dx = aimPoint.x - striker.x;
+  const dy = aimPoint.y - striker.y;
+  const dragDistance = Math.hypot(dx, dy);
+  if (dragDistance < 0.0001) return 1;
+
+  const dirX = dx / dragDistance;
+  const dirY = dy / dragDistance;
+  const hits = [];
+
+  if (Math.abs(dirX) > 0.0001) {
+    hits.push((PLAYFIELD_MIN - striker.x) / dirX);
+    hits.push((PLAYFIELD_MAX_X - striker.x) / dirX);
+  }
+
+  if (Math.abs(dirY) > 0.0001) {
+    hits.push((PLAYFIELD_MIN - striker.y) / dirY);
+    hits.push((PLAYFIELD_MAX_Y - striker.y) / dirY);
+  }
+
+  const forwardHits = hits.filter((t) => t > 0.0001);
+  if (!forwardHits.length) return dragDistance;
+  return Math.min(...forwardHits);
+}
+
+function calculateShotPowerPercent(striker, aimPoint) {
+  const dragDistance = Math.hypot(striker.x - aimPoint.x, striker.y - aimPoint.y);
+  const maxDragDistance = getMaxDragDistanceToBorder(striker, aimPoint);
+  return Math.min(MAX_SHOT_POWER_PERCENT, (dragDistance / Math.max(1, maxDragDistance)) * MAX_SHOT_POWER_PERCENT);
+}
+
 function releaseShot() {
   if (!state.aiming || state.moving) return;
   const striker = state.objects.find((o) => o.type === 'striker');
   const dx = striker.x - state.aimPoint.x;
   const dy = striker.y - state.aimPoint.y;
   const d = Math.max(1, Math.hypot(dx, dy));
-  const shotPowerPercent = Math.min(MAX_SHOT_POWER_PERCENT, (d / POWER_FULL_DRAG_DISTANCE) * MAX_SHOT_POWER_PERCENT);
+  const shotPowerPercent = calculateShotPowerPercent(striker, state.aimPoint);
   const pwr = (shotPowerPercent / MAX_SHOT_POWER_PERCENT) * MAX_STRIKER_SHOT_SPEED;
   striker.vx = (dx / d) * pwr;
   striker.vy = (dy / d) * pwr;
@@ -480,8 +517,7 @@ canvas.addEventListener('mousemove', (e) => {
   const { x, y } = getCanvasCoords(e);
   state.aimPoint = { x, y };
   const striker = state.objects.find((o) => o.type === 'striker');
-  const dragDistance = Math.hypot(striker.x - x, striker.y - y);
-  state.shotPower = Math.min(MAX_SHOT_POWER_PERCENT, (dragDistance / POWER_FULL_DRAG_DISTANCE) * MAX_SHOT_POWER_PERCENT);
+  state.shotPower = calculateShotPowerPercent(striker, state.aimPoint);
 });
 
 canvas.addEventListener('mouseup', releaseShot);
