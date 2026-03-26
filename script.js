@@ -7,7 +7,6 @@ const modeLabel = document.getElementById('modeLabel');
 const levelLabel = document.getElementById('levelLabel');
 const turnLabel = document.getElementById('turnLabel');
 const timerLabel = document.getElementById('timerLabel');
-const statsList = document.getElementById('stats');
 const achievementsList = document.getElementById('achievements');
 const scoreboardList = document.getElementById('scoreboard');
 const usernameInput = document.getElementById('username');
@@ -420,15 +419,6 @@ function renderPanels() {
     .map((p) => `<li>${p.name}: ${p.score} pts (W:${p.wins} L:${p.losses})</li>`)
     .join('');
 
-  statsList.innerHTML = [
-    `Matches: ${state.stats.matchesPlayed}`,
-    `Wins/Losses: ${state.stats.wins}/${state.stats.losses}`,
-    `Level: ${state.stats.level}`,
-    `Reward Coins: ${state.stats.coins}`,
-  ]
-    .map((s) => `<li>${s}</li>`)
-    .join('');
-
   updateAchievements();
 }
 
@@ -548,6 +538,7 @@ canvas.addEventListener('wheel', (e) => {
 modeButtons.forEach((b) => b.addEventListener('click', () => initMode(b.dataset.mode)));
 practiceBtn.addEventListener('click', () => initMode('practice'));
 saveProfileBtn.addEventListener('click', () => {
+  state.players[0].name = usernameInput.value.trim() || 'Player 1';
   alert('Profile saved locally.');
   renderPanels();
 });
