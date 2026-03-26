@@ -24,6 +24,9 @@ const STRIKER_LINE_MAX_X = BOARD.w - 150;
 const FRICTION = 0.991;
 const STOP_EPS = 0.08;
 const ASSIST_POWER_THRESHOLD = 6.5;
+const MAX_SHOT_POWER_PERCENT = 100;
+const MAX_STRIKER_SHOT_SPEED = 22;
+const POWER_FULL_DRAG_DISTANCE = 176;
 
 const state = {
   mode: null,
@@ -233,7 +236,7 @@ function drawObjects() {
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 14px Inter, system-ui, Arial';
     ctx.textAlign = 'center';
-    ctx.fillText(`Power: ${state.shotPower.toFixed(1)}`, striker.x, striker.y - 38);
+    ctx.fillText(`Power: ${state.shotPower.toFixed(1)}%`, striker.x, striker.y - 38);
   }
 }
 
@@ -439,7 +442,8 @@ function releaseShot() {
   const dx = striker.x - state.aimPoint.x;
   const dy = striker.y - state.aimPoint.y;
   const d = Math.max(1, Math.hypot(dx, dy));
-  const pwr = Math.min(22, d / 8);
+  const shotPowerPercent = Math.min(MAX_SHOT_POWER_PERCENT, (d / POWER_FULL_DRAG_DISTANCE) * MAX_SHOT_POWER_PERCENT);
+  const pwr = (shotPowerPercent / MAX_SHOT_POWER_PERCENT) * MAX_STRIKER_SHOT_SPEED;
   striker.vx = (dx / d) * pwr;
   striker.vy = (dy / d) * pwr;
   state.lastShotPower = pwr;
@@ -477,7 +481,7 @@ canvas.addEventListener('mousemove', (e) => {
   state.aimPoint = { x, y };
   const striker = state.objects.find((o) => o.type === 'striker');
   const dragDistance = Math.hypot(striker.x - x, striker.y - y);
-  state.shotPower = Math.min(22, dragDistance / 8);
+  state.shotPower = Math.min(MAX_SHOT_POWER_PERCENT, (dragDistance / POWER_FULL_DRAG_DISTANCE) * MAX_SHOT_POWER_PERCENT);
 });
 
 canvas.addEventListener('mouseup', releaseShot);
