@@ -38,6 +38,13 @@
 
         <h3>Customization</h3>
         <label>
+          Game Level
+          <select id="levelSelect">
+            <option value="1">Level 1 (Normal)</option>
+            <option value="2">Level 2 (Hard)</option>
+          </select>
+        </label>
+        <label>
           Theme
           <select id="themeSelect">
             <option value="classic">Classic</option>
@@ -54,6 +61,7 @@
         </div>
         <aside class="game-meta" aria-label="Game status">
           <div id="modeLabel">Mode: Not Started</div>
+          <div id="levelLabel">Game Level: 1</div>
           <div id="turnLabel">Turn: -</div>
           <div id="timerLabel">Turn Timer: 25s</div>
         </aside>

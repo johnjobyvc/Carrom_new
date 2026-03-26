@@ -5,6 +5,9 @@ A browser-based Carrom game prototype implementing the provided software specifi
 - Single-player mode (vs AI)
 - Local multiplayer mode
 - Online multiplayer (simulated rival)
+- Two game difficulty levels:
+  - Level 1 (Normal)
+  - Level 2 (Hard): smaller pockets, shorter turn timer, lower shot assist, and stronger AI decisions
 - Physics-based striker/coin movement with collisions, friction, and pocket detection
 - Leaderboard panels (global/weekly/friends)
 - Achievements and reward coin progression
