@@ -259,20 +259,120 @@ function drawObjects() {
 
   if (state.aiming && state.aimPoint) {
     const striker = state.objects.find((o) => o.type === 'striker');
+    drawAimPrediction(striker, state.aimPoint);
     ctx.strokeStyle = '#0ef';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 1.8;
+    ctx.setLineDash([6, 6]);
     ctx.beginPath();
     ctx.moveTo(striker.x, striker.y);
     ctx.lineTo(state.aimPoint.x, state.aimPoint.y);
     ctx.stroke();
+    ctx.setLineDash([]);
 
     ctx.fillStyle = '#0f1722dd';
-    ctx.fillRect(striker.x - 48, striker.y - 56, 96, 26);
+    const boxX = Math.max(8, Math.min(BOARD.w - 104, striker.x - 48));
+    const boxY = Math.max(8, Math.min(BOARD.h - 34, striker.y - 56));
+    ctx.fillRect(boxX, boxY, 96, 26);
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 14px Inter, system-ui, Arial';
     ctx.textAlign = 'center';
-    ctx.fillText(`Power: ${state.shotPower.toFixed(1)}%`, striker.x, striker.y - 38);
+    ctx.fillText(`Power: ${state.shotPower.toFixed(1)}%`, boxX + 48, boxY + 18);
   }
+}
+
+function normalize(vx, vy) {
+  const mag = Math.hypot(vx, vy);
+  if (mag < 0.0001) return null;
+  return { x: vx / mag, y: vy / mag };
+}
+
+function timeToBoundary(point, dir) {
+  const hits = [];
+  if (Math.abs(dir.x) > 0.0001) {
+    hits.push({
+      t: (PLAYFIELD_MIN + STRIKER_R - point.x) / dir.x,
+      normal: { x: 1, y: 0 },
+    });
+    hits.push({
+      t: (PLAYFIELD_MAX_X - STRIKER_R - point.x) / dir.x,
+      normal: { x: -1, y: 0 },
+    });
+  }
+  if (Math.abs(dir.y) > 0.0001) {
+    hits.push({
+      t: (PLAYFIELD_MIN + STRIKER_R - point.y) / dir.y,
+      normal: { x: 0, y: 1 },
+    });
+    hits.push({
+      t: (PLAYFIELD_MAX_Y - STRIKER_R - point.y) / dir.y,
+      normal: { x: 0, y: -1 },
+    });
+  }
+  return hits.filter((h) => h.t > 0.001).sort((a, b) => a.t - b.t)[0] || null;
+}
+
+function firstCoinContact(point, dir) {
+  let best = null;
+  for (const coin of state.objects) {
+    if (!coin.active || coin.type === 'striker') continue;
+    const rx = point.x - coin.x;
+    const ry = point.y - coin.y;
+    const radius = STRIKER_R + coin.r;
+    const b = 2 * (dir.x * rx + dir.y * ry);
+    const c = rx * rx + ry * ry - radius * radius;
+    const discriminant = b * b - 4 * c;
+    if (discriminant < 0) continue;
+    const root = Math.sqrt(discriminant);
+    const t1 = (-b - root) / 2;
+    const t2 = (-b + root) / 2;
+    const t = [t1, t2].filter((value) => value > 0.001).sort((a, b) => a - b)[0];
+    if (!t) continue;
+    if (!best || t < best.t) best = { t, coin };
+  }
+  return best;
+}
+
+function drawDashedSegment(from, to, color, dash = [7, 6], width = 2) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.setLineDash(dash);
+  ctx.beginPath();
+  ctx.moveTo(from.x, from.y);
+  ctx.lineTo(to.x, to.y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function drawAimPrediction(striker, aimPoint) {
+  const dir = normalize(striker.x - aimPoint.x, striker.y - aimPoint.y);
+  if (!dir) return;
+  const wallHit = timeToBoundary(striker, dir);
+  const coinHit = firstCoinContact(striker, dir);
+  const firstEvent = !coinHit || (wallHit && wallHit.t < coinHit.t) ? wallHit : coinHit;
+  if (!firstEvent) return;
+
+  const contact = {
+    x: striker.x + dir.x * firstEvent.t,
+    y: striker.y + dir.y * firstEvent.t,
+  };
+  drawDashedSegment(striker, contact, '#1e90ff', [6, 6], 2.2);
+
+  if ('coin' in firstEvent) {
+    const n = normalize(contact.x - firstEvent.coin.x, contact.y - firstEvent.coin.y);
+    if (!n) return;
+    const impact = Math.max(0, dir.x * n.x + dir.y * n.y);
+    const coinDir = { x: n.x * impact, y: n.y * impact };
+    const strikerDir = { x: dir.x - impact * n.x, y: dir.y - impact * n.y };
+    drawDashedSegment(contact, { x: contact.x + coinDir.x * 170, y: contact.y + coinDir.y * 170 }, '#ff5252');
+    drawDashedSegment(contact, { x: contact.x + strikerDir.x * 140, y: contact.y + strikerDir.y * 140 }, '#ffae42');
+    return;
+  }
+
+  const reflected = {
+    x: dir.x - 2 * (dir.x * firstEvent.normal.x + dir.y * firstEvent.normal.y) * firstEvent.normal.x,
+    y: dir.y - 2 * (dir.x * firstEvent.normal.x + dir.y * firstEvent.normal.y) * firstEvent.normal.y,
+  };
+  drawDashedSegment(contact, { x: contact.x + reflected.x * 140, y: contact.y + reflected.y * 140 }, '#1e90ff');
 }
 
 function physicsStep() {
@@ -605,7 +705,7 @@ function releaseShot() {
 canvas.addEventListener('mousedown', (e) => {
   if (state.moving || !state.mode) return;
   if ((state.mode === 'ai' || state.mode === 'online') && state.turn === 1) return;
-  if (e.button !== 0) return;
+  if (e.button !== 0 && e.button !== 2) return;
   const { x, y } = getCanvasCoords(e);
   const striker = state.objects.find((o) => o.type === 'striker');
   const lineY = currentStrikerLineY();
@@ -634,6 +734,7 @@ canvas.addEventListener('mousemove', (e) => {
 
 canvas.addEventListener('mouseup', releaseShot);
 window.addEventListener('mouseup', releaseShot);
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
 
 canvas.addEventListener('wheel', (e) => {
