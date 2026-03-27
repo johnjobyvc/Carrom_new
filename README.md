@@ -1,29 +1,29 @@
-# Carrom Multiplayer Game (Web MVP)
+# カロム対戦ゲーム（Web MVP）
 
-A browser-based Carrom game prototype implementing the provided software specification:
+提供されたソフトウェア仕様を実装した、ブラウザベースのカロムゲーム試作版です。
 
-- Single-player mode (vs AI)
-- Local multiplayer mode
-- Online multiplayer (simulated rival)
-- Two game difficulty levels:
-  - Level 1 (Normal)
-  - Level 2 (Hard): smaller pockets, shorter turn timer, lower shot assist, and stronger AI decisions
-- Physics-based striker/coin movement with collisions, friction, and pocket detection
-- Leaderboard panels (global/weekly/friends)
-- Achievements and reward coin progression
-- Basic profile/stat persistence with `localStorage`
-- Theme customization
+- シングルプレイモード（AI対戦）
+- ローカルマルチプレイモード
+- オンラインマルチプレイ（シミュレーション対戦相手）
+- 2つの難易度レベル
+  - レベル1（通常）
+  - レベル2（難しい）: ポケット縮小、ターン時間短縮、ショット補助低下、AI判断強化
+- 物理ベースのストライカー／コイン挙動（衝突、摩擦、ポケット判定）
+- リーダーボードパネル（グローバル／週間／フレンド）
+- 実績と報酬コイン進行
+- `localStorage` による基本プロフィール／統計データ保存
+- テーマカスタマイズ
 
-## Run
+## 実行方法
 
-Open `index.html` directly in a browser, or run a static file server:
+`index.html` をブラウザで直接開くか、静的ファイルサーバーを起動してください。
 
 ```bash
 python3 -m http.server 8080
 ```
 
-Then navigate to `http://localhost:8080`.
+その後、`http://localhost:8080` にアクセスします。
 
-## Notes
+## 備考
 
-This is an MVP implementation focused on gameplay and UX foundation. Online mode is simulated client-side and does not include a real matchmaking server or backend database yet.
+本実装は、ゲームプレイとUXの基盤に重点を置いたMVPです。オンラインモードはクライアント側のシミュレーションであり、実際のマッチメイキングサーバーやバックエンドデータベースは未実装です。
