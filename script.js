@@ -14,6 +14,7 @@ const saveProfileBtn = document.getElementById('saveProfile');
 const themeSelect = document.getElementById('themeSelect');
 const levelSelect = document.getElementById('levelSelect');
 const coinColorSelect = document.getElementById('coinColorSelect');
+const boardElement = document.getElementById('board');
 
 const BOARD = { w: 760, h: 760, margin: 60 };
 const BASE_POCKET_R = 26;
@@ -352,11 +353,13 @@ function physicsStep() {
 function handlePocketing() {
   const pks = pockets();
   let pocketedThisTurn = 0;
+  let pocketEvents = 0;
 
   for (const o of state.objects) {
     if (!o.active || o.type === 'striker') continue;
     for (const p of pks) {
       if (Math.hypot(o.x - p.x, o.y - p.y) < levelConfig().pocketRadius) {
+        pocketEvents += 1;
         const current = state.players[state.turn];
         const isOwnColor = o.type === current.assigned;
         const isQueen = o.type === 'queen';
@@ -378,9 +381,27 @@ function handlePocketing() {
     }
   }
 
+  if (pocketEvents > 0) triggerPocketFeedback(pocketEvents);
   if (pocketedThisTurn >= 3) state.stats.precisionTurns += 1;
 
   evaluateWin();
+}
+
+function triggerPocketFeedback(pocketEvents) {
+  if (boardElement) {
+    boardElement.classList.remove('pocket-shake');
+    void boardElement.offsetWidth;
+    boardElement.classList.add('pocket-shake');
+  }
+
+  if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+    const burstCount = Math.min(3, pocketEvents);
+    const pattern = [];
+    for (let i = 0; i < burstCount; i++) {
+      pattern.push(18, 25);
+    }
+    navigator.vibrate(pattern);
+  }
 }
 
 function respotCoin(coin) {

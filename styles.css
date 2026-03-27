@@ -121,6 +121,19 @@ button {
   touch-action: none;
 }
 
+#board.pocket-shake {
+  animation: pocket-shake 230ms ease-in-out;
+}
+
+@keyframes pocket-shake {
+  0% { transform: translate(0, 0); }
+  20% { transform: translate(-3px, 2px); }
+  40% { transform: translate(3px, -2px); }
+  60% { transform: translate(-2px, -2px); }
+  80% { transform: translate(2px, 2px); }
+  100% { transform: translate(0, 0); }
+}
+
 .hint { color: #d4d7db; margin-top: 0.45rem; }
 li { margin-bottom: 0.25rem; }
 
