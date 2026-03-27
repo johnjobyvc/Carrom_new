@@ -399,6 +399,10 @@ function physicsStep() {
 
     if (o.x - o.r < PLAYFIELD_MIN || o.x + o.r > PLAYFIELD_MAX_X) o.vx *= -1;
     if (o.y - o.r < PLAYFIELD_MIN || o.y + o.r > PLAYFIELD_MAX_Y) o.vy *= -1;
+
+    // Keep every object inside the board border at all times (including around pockets).
+    o.x = Math.max(PLAYFIELD_MIN + o.r, Math.min(PLAYFIELD_MAX_X - o.r, o.x));
+    o.y = Math.max(PLAYFIELD_MIN + o.r, Math.min(PLAYFIELD_MAX_Y - o.r, o.y));
   }
 
   for (let i = 0; i < state.objects.length; i++) {
