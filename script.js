@@ -431,8 +431,17 @@ function respotCoin(coin) {
 }
 
 function evaluateWin() {
-  const winner = state.players.find((p) => p.colorPocketed >= 9 && p.queenPocketed >= 1);
-  if (!winner) return;
+  const remainingAssignedByPlayer = state.players.map((player) =>
+    state.objects.filter((o) => o.active && o.type === player.assigned).length,
+  );
+  const queenRemaining = state.objects.some((o) => o.active && o.type === 'queen');
+  const currentPlayer = state.players[state.turn];
+  const currentPlayerIndex = state.turn;
+  const currentPlayerCanStillPocket =
+    remainingAssignedByPlayer[currentPlayerIndex] + (queenRemaining ? 1 : 0);
+  if (currentPlayerCanStillPocket > 0) return;
+
+  const winner = currentPlayer;
 
   clearInterval(state.timerRef);
   const p1 = state.players[0];
@@ -452,6 +461,27 @@ function evaluateWin() {
   saveStats();
   updateAchievements();
   renderPanels();
+  resetMatchAfterWin();
+}
+
+function resetMatchAfterWin() {
+  setTimeout(() => {
+    state.turn = 0;
+    state.pendingTurnSwitch = false;
+    state.moving = false;
+    state.aiming = false;
+    state.aimPoint = null;
+    state.shotPower = 0;
+    state.lastShotPower = 0;
+    state.players.forEach((player) => {
+      player.score = 0;
+      player.colorPocketed = 0;
+      player.queenPocketed = 0;
+    });
+    resetBoard();
+    startTurnTimer();
+    renderPanels();
+  }, 150);
 }
 
 function aiShoot() {
