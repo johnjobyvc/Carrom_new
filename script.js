@@ -15,6 +15,16 @@ const themeSelect = document.getElementById('themeSelect');
 const levelSelect = document.getElementById('levelSelect');
 const coinColorSelect = document.getElementById('coinColorSelect');
 const boardElement = document.getElementById('board');
+const MODE_NAMES_JA = {
+  ai: 'AI対戦',
+  local: 'ローカル対戦',
+  online: 'オンライン対戦（シミュレーション）',
+  practice: '練習',
+};
+const COLOR_NAMES_JA = {
+  black: '黒',
+  white: '白',
+};
 
 const BOARD = { w: 760, h: 760, margin: 60 };
 const BASE_POCKET_R = 26;
@@ -66,8 +76,8 @@ const state = {
   lastShotPower: 0,
   pendingTurnSwitch: false,
   players: [
-    { name: 'Player 1', score: 0, wins: 0, losses: 0, assigned: 'black', colorPocketed: 0, queenPocketed: 0 },
-    { name: 'Player 2', score: 0, wins: 0, losses: 0, assigned: 'white', colorPocketed: 0, queenPocketed: 0 },
+    { name: 'プレイヤー1', score: 0, wins: 0, losses: 0, assigned: 'black', colorPocketed: 0, queenPocketed: 0 },
+    { name: 'プレイヤー2', score: 0, wins: 0, losses: 0, assigned: 'white', colorPocketed: 0, queenPocketed: 0 },
   ],
   lastWinnerName: localStorage.getItem('lastWinnerName') || '',
   stats: {
@@ -152,10 +162,10 @@ function initMode(mode) {
   state.players[1].colorPocketed = 0;
   state.players[0].queenPocketed = 0;
   state.players[1].queenPocketed = 0;
-  state.players[0].name = usernameInput.value || 'Player 1';
-  state.players[1].name = mode === 'ai' ? 'AI Bot' : mode === 'online' ? 'Online Rival' : 'Player 2';
-  modeLabel.textContent = `Mode: ${mode}`;
-  levelLabel.textContent = `Game Level: ${state.level}`;
+  state.players[0].name = usernameInput.value || 'プレイヤー1';
+  state.players[1].name = mode === 'ai' ? 'AIボット' : mode === 'online' ? 'オンライン対戦相手' : 'プレイヤー2';
+  modeLabel.textContent = `モード: ${MODE_NAMES_JA[mode] || mode}`;
+  levelLabel.textContent = `ゲームレベル: ${state.level}`;
   resetBoard();
   startTurnTimer();
   renderPanels();
@@ -164,11 +174,11 @@ function initMode(mode) {
 function startTurnTimer() {
   clearInterval(state.timerRef);
   state.turnTime = levelConfig().turnTime;
-  timerLabel.textContent = `Turn Timer: ${state.turnTime}s`;
+  timerLabel.textContent = `ターンタイマー: ${state.turnTime}秒`;
   state.timerRef = setInterval(() => {
     if (state.moving) return;
     state.turnTime -= 1;
-    timerLabel.textContent = `Turn Timer: ${state.turnTime}s`;
+    timerLabel.textContent = `ターンタイマー: ${state.turnTime}秒`;
     if (state.turnTime <= 0) {
       advanceTurnAndHandleAutomation();
     }
@@ -276,7 +286,7 @@ function drawObjects() {
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 14px Inter, system-ui, Arial';
     ctx.textAlign = 'center';
-    ctx.fillText(`Power: ${state.shotPower.toFixed(1)}%`, boxX + 48, boxY + 18);
+    ctx.fillText(`パワー: ${state.shotPower.toFixed(1)}%`, boxX + 48, boxY + 18);
   }
 }
 
@@ -547,7 +557,7 @@ function evaluateWin() {
   const p1 = state.players[0];
   const loser = winner === p1 ? state.players[1] : p1;
 
-  alert(`${winner.name} wins! +5 bonus points.`);
+  alert(`${winner.name} の勝利！+5ボーナスポイント。`);
   winner.score += 5;
   state.lastWinnerName = winner.name;
   localStorage.setItem('lastWinnerName', winner.name);
@@ -615,11 +625,11 @@ function aiShoot() {
 }
 
 function renderPanels() {
-  turnLabel.textContent = `Turn: ${state.players[state.turn]?.name || '-'}`;
+  turnLabel.textContent = `ターン: ${state.players[state.turn]?.name || '-'}`;
   scoreboardList.innerHTML = state.players
     .map(
       (p) =>
-        `<li>${p.name}: ${p.score} pts | Color: ${p.assigned} (${p.colorPocketed}/9) | Red: ${p.queenPocketed}/1 (W:${p.wins} L:${p.losses})</li>`,
+        `<li>${p.name}: ${p.score} 点 | 色: ${COLOR_NAMES_JA[p.assigned] || p.assigned} (${p.colorPocketed}/9) | 赤: ${p.queenPocketed}/1 (勝:${p.wins} 負:${p.losses})</li>`,
     )
     .join('');
 
@@ -628,13 +638,13 @@ function renderPanels() {
 
 function updateAchievements() {
   const unlocked = [];
-  if (state.stats.wins >= 1) unlocked.push('First Win');
-  if (state.stats.wins >= 50) unlocked.push('Carrom Master');
-  if (state.stats.precisionTurns >= 1) unlocked.push('Precision Shot');
-  if (state.lastWinnerName) unlocked.push(`Last Winner: ${state.lastWinnerName}`);
+  if (state.stats.wins >= 1) unlocked.push('初勝利');
+  if (state.stats.wins >= 50) unlocked.push('カロムマスター');
+  if (state.stats.precisionTurns >= 1) unlocked.push('精密ショット');
+  if (state.lastWinnerName) unlocked.push(`前回の勝者: ${state.lastWinnerName}`);
   achievementsList.innerHTML = unlocked.length
     ? unlocked.map((a) => `<li>${a}</li>`).join('')
-    : '<li>No achievements yet.</li>';
+    : '<li>まだ実績はありません。</li>';
 }
 
 function loop() {
@@ -744,8 +754,8 @@ canvas.addEventListener('wheel', (e) => {
 modeButtons.forEach((b) => b.addEventListener('click', () => initMode(b.dataset.mode)));
 practiceBtn.addEventListener('click', () => initMode('practice'));
 saveProfileBtn.addEventListener('click', () => {
-  state.players[0].name = usernameInput.value.trim() || 'Player 1';
-  alert('Profile saved locally.');
+  state.players[0].name = usernameInput.value.trim() || 'プレイヤー1';
+  alert('プロフィールをローカルに保存しました。');
   renderPanels();
 });
 
@@ -756,10 +766,10 @@ themeSelect.addEventListener('change', () => {
 });
 
 levelSelect.addEventListener('change', () => {
-  levelLabel.textContent = `Game Level: ${Number(levelSelect.value) || 1}`;
+  levelLabel.textContent = `ゲームレベル: ${Number(levelSelect.value) || 1}`;
 });
 
 resetBoard();
-levelLabel.textContent = `Game Level: ${state.level}`;
+levelLabel.textContent = `ゲームレベル: ${state.level}`;
 renderPanels();
 loop();
