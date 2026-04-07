@@ -40,6 +40,7 @@ const BASE_ASSIST_POWER_THRESHOLD = 6.5;
 const MAX_SHOT_POWER_PERCENT = 100;
 const MAX_STRIKER_SHOT_SPEED = 22;
 const MAX_SHOT_DRAG_DISTANCE = 260;
+const EXTRA_AIM_DRAG_SPACE = 220;
 const PLAYFIELD_MIN = 24;
 const PLAYFIELD_MAX_X = BOARD.w - PLAYFIELD_MIN;
 const PLAYFIELD_MAX_Y = BOARD.h - PLAYFIELD_MIN;
@@ -683,9 +684,11 @@ function loop() {
 
 function getCanvasCoords(e) {
   const rect = canvas.getBoundingClientRect();
+  const rawX = ((e.clientX - rect.left) * BOARD.w) / rect.width;
+  const rawY = ((e.clientY - rect.top) * BOARD.h) / rect.height;
   return {
-    x: ((e.clientX - rect.left) * BOARD.w) / rect.width,
-    y: ((e.clientY - rect.top) * BOARD.h) / rect.height,
+    x: Math.min(BOARD.w + EXTRA_AIM_DRAG_SPACE, Math.max(-EXTRA_AIM_DRAG_SPACE, rawX)),
+    y: Math.min(BOARD.h + EXTRA_AIM_DRAG_SPACE, Math.max(-EXTRA_AIM_DRAG_SPACE, rawY)),
   };
 }
 
@@ -739,13 +742,16 @@ canvas.addEventListener('mousedown', (e) => {
   }
 });
 
-canvas.addEventListener('mousemove', (e) => {
+function updateAimFromPointer(e) {
   if (!state.aiming) return;
   const { x, y } = getCanvasCoords(e);
   state.aimPoint = { x, y };
   const striker = state.objects.find((o) => o.type === 'striker');
   state.shotPower = calculateShotPowerPercent(striker, state.aimPoint);
-});
+}
+
+canvas.addEventListener('mousemove', updateAimFromPointer);
+window.addEventListener('mousemove', updateAimFromPointer);
 
 canvas.addEventListener('mouseup', releaseShot);
 window.addEventListener('mouseup', releaseShot);
