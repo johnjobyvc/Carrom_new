@@ -19,6 +19,7 @@ body {
 
 body {
   margin: 0;
+  padding-bottom: 1.25rem;
   font-family: Inter, system-ui, Arial, sans-serif;
   font-size: 12px;
   background: var(--bg);

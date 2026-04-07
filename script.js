@@ -39,6 +39,7 @@ const STOP_EPS = 0.08;
 const BASE_ASSIST_POWER_THRESHOLD = 6.5;
 const MAX_SHOT_POWER_PERCENT = 100;
 const MAX_STRIKER_SHOT_SPEED = 22;
+const MAX_SHOT_DRAG_DISTANCE = 260;
 const PLAYFIELD_MIN = 24;
 const PLAYFIELD_MAX_X = BOARD.w - PLAYFIELD_MIN;
 const PLAYFIELD_MAX_Y = BOARD.h - PLAYFIELD_MIN;
@@ -75,6 +76,8 @@ const state = {
   shotPower: 0,
   lastShotPower: 0,
   pendingTurnSwitch: false,
+  scoredThisTurn: false,
+  shotPromptShownThisTurn: false,
   players: [
     { name: 'プレイヤー1', score: 0, wins: 0, losses: 0, assigned: 'black', colorPocketed: 0, queenPocketed: 0 },
     { name: 'プレイヤー2', score: 0, wins: 0, losses: 0, assigned: 'white', colorPocketed: 0, queenPocketed: 0 },
@@ -152,6 +155,8 @@ function initMode(mode) {
   state.level = Number(levelSelect.value) || 1;
   state.turn = 0;
   state.pendingTurnSwitch = false;
+  state.scoredThisTurn = false;
+  state.shotPromptShownThisTurn = false;
   const selectedColor = coinColorSelect.value === 'white' ? 'white' : 'black';
   const oppositeColor = selectedColor === 'black' ? 'white' : 'black';
   state.players[0].assigned = selectedColor;
@@ -200,6 +205,8 @@ function switchTurn() {
   state.aiming = false;
   state.aimPoint = null;
   state.shotPower = 0;
+  state.scoredThisTurn = false;
+  state.shotPromptShownThisTurn = false;
   placeStrikerForCurrentTurn(true);
 }
 
@@ -457,7 +464,17 @@ function physicsStep() {
   state.moving = moving;
   if (!moving) {
     if (state.pendingTurnSwitch) {
-      advanceTurnAndHandleAutomation();
+      if (state.scoredThisTurn) {
+        state.turnTime = levelConfig().turnTime;
+        state.aiming = false;
+        state.aimPoint = null;
+        state.shotPower = 0;
+        state.scoredThisTurn = false;
+        state.shotPromptShownThisTurn = false;
+        placeStrikerForCurrentTurn(true);
+      } else {
+        advanceTurnAndHandleAutomation();
+      }
       state.pendingTurnSwitch = false;
       state.lastShotPower = 0;
     }
@@ -480,6 +497,7 @@ function handlePocketing() {
         if (isOwnColor || isQueen) {
           o.active = false;
           pocketedThisTurn += 1;
+          state.scoredThisTurn = true;
           if (isQueen) {
             current.score += 2;
             current.queenPocketed += 1;
@@ -587,6 +605,8 @@ function resetMatchAfterWin() {
     state.aimPoint = null;
     state.shotPower = 0;
     state.lastShotPower = 0;
+    state.scoredThisTurn = false;
+    state.shotPromptShownThisTurn = false;
     state.players.forEach((player) => {
       player.score = 0;
       player.colorPocketed = 0;
@@ -625,6 +645,8 @@ function aiShoot() {
   striker.vy = (dy / d) * pwr;
   state.lastShotPower = pwr;
   state.pendingTurnSwitch = true;
+  state.scoredThisTurn = false;
+  state.shotPromptShownThisTurn = true;
   state.moving = true;
 }
 
@@ -667,39 +689,17 @@ function getCanvasCoords(e) {
   };
 }
 
-function getMaxDragDistanceToBorder(striker, aimPoint) {
-  const dx = aimPoint.x - striker.x;
-  const dy = aimPoint.y - striker.y;
-  const dragDistance = Math.hypot(dx, dy);
-  if (dragDistance < 0.0001) return 1;
-
-  const dirX = dx / dragDistance;
-  const dirY = dy / dragDistance;
-  const hits = [];
-
-  if (Math.abs(dirX) > 0.0001) {
-    hits.push((PLAYFIELD_MIN - striker.x) / dirX);
-    hits.push((PLAYFIELD_MAX_X - striker.x) / dirX);
-  }
-
-  if (Math.abs(dirY) > 0.0001) {
-    hits.push((PLAYFIELD_MIN - striker.y) / dirY);
-    hits.push((PLAYFIELD_MAX_Y - striker.y) / dirY);
-  }
-
-  const forwardHits = hits.filter((t) => t > 0.0001);
-  if (!forwardHits.length) return dragDistance;
-  return Math.min(...forwardHits);
-}
-
 function calculateShotPowerPercent(striker, aimPoint) {
   const dragDistance = Math.hypot(striker.x - aimPoint.x, striker.y - aimPoint.y);
-  const maxDragDistance = getMaxDragDistanceToBorder(striker, aimPoint);
-  return Math.min(MAX_SHOT_POWER_PERCENT, (dragDistance / Math.max(1, maxDragDistance)) * MAX_SHOT_POWER_PERCENT);
+  return Math.min(MAX_SHOT_POWER_PERCENT, (dragDistance / MAX_SHOT_DRAG_DISTANCE) * MAX_SHOT_POWER_PERCENT);
 }
 
 function releaseShot() {
   if (!state.aiming || state.moving) return;
+  if (!state.shotPromptShownThisTurn) {
+    alert('High-level computer thinking implements algorithms that are mindful of the imaginary ball (ghost ball) in billiards.');
+    state.shotPromptShownThisTurn = true;
+  }
   const striker = state.objects.find((o) => o.type === 'striker');
   const dx = striker.x - state.aimPoint.x;
   const dy = striker.y - state.aimPoint.y;
@@ -710,6 +710,7 @@ function releaseShot() {
   striker.vy = (dy / d) * pwr;
   state.lastShotPower = pwr;
   state.pendingTurnSwitch = true;
+  state.scoredThisTurn = false;
   state.aiming = false;
   state.aimPoint = null;
   state.shotPower = 0;
