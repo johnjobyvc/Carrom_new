@@ -771,12 +771,18 @@ canvas.addEventListener('mousedown', (e) => {
   const lineY = currentStrikerLineY();
 
   if (Math.hypot(x - striker.x, y - striker.y) <= striker.r + 8) {
+    if (e.button === 0) {
+      state.aiming = true;
+      state.aimPoint = { x, y };
+      state.shotPower = calculateShotPowerPercent(striker, state.aimPoint);
+      return;
+    }
     if (Math.abs(striker.y - lineY) <= 1 && Math.abs(y - lineY) <= 24) {
       state.draggingStriker = true;
     } else {
       state.aiming = true;
       state.aimPoint = { x, y };
-      state.shotPower = 0;
+      state.shotPower = calculateShotPowerPercent(striker, state.aimPoint);
     }
     return;
   }
