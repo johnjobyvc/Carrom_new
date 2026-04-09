@@ -290,6 +290,7 @@ function drawObjects() {
   if (state.aiming && state.aimPoint) {
     const striker = state.objects.find((o) => o.type === 'striker');
     drawAimPrediction(striker, state.aimPoint);
+    drawGhostBallGuide(striker, state.aimPoint);
     ctx.strokeStyle = '#0ef';
     ctx.lineWidth = 1.8;
     ctx.setLineDash([6, 6]);
@@ -381,6 +382,114 @@ function drawDashedSegment(from, to, color, dash = [7, 6], width = 2) {
   ctx.lineTo(to.x, to.y);
   ctx.stroke();
   ctx.setLineDash([]);
+}
+
+function drawArrow(from, to, color, width = 2.4) {
+  const headLength = 14;
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const distance = Math.hypot(dx, dy);
+  if (distance < 1) return;
+  const ux = dx / distance;
+  const uy = dy / distance;
+  const baseX = to.x - ux * headLength;
+  const baseY = to.y - uy * headLength;
+
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = width;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(from.x, from.y);
+  ctx.lineTo(baseX, baseY);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(to.x, to.y);
+  ctx.lineTo(baseX - uy * (headLength * 0.45), baseY + ux * (headLength * 0.45));
+  ctx.lineTo(baseX + uy * (headLength * 0.45), baseY - ux * (headLength * 0.45));
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawGuideLabel(text, x, y, color) {
+  ctx.font = 'bold 16px Inter, system-ui, Arial';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+  ctx.fillRect(x - 5, y - 15, ctx.measureText(text).width + 10, 20);
+  ctx.fillStyle = color;
+  ctx.fillText(text, x, y);
+}
+
+function drawGhostBallGuide(striker, aimPoint) {
+  const dir = normalize(striker.x - aimPoint.x, striker.y - aimPoint.y);
+  if (!dir) return;
+  const coinHit = firstCoinContact(striker, dir);
+  const wallHit = timeToBoundary(striker, dir);
+  if (!coinHit) return;
+  if (wallHit && wallHit.t < coinHit.t) return;
+
+  const ghostCenter = {
+    x: striker.x + dir.x * coinHit.t,
+    y: striker.y + dir.y * coinHit.t,
+  };
+  const targetCoin = coinHit.coin;
+  const lineCentersDir = normalize(targetCoin.x - ghostCenter.x, targetCoin.y - ghostCenter.y);
+  if (!lineCentersDir) return;
+
+  const contactPoint = {
+    x: targetCoin.x - lineCentersDir.x * targetCoin.r,
+    y: targetCoin.y - lineCentersDir.y * targetCoin.r,
+  };
+  const lineCentersStart = {
+    x: ghostCenter.x - lineCentersDir.x * 32,
+    y: ghostCenter.y - lineCentersDir.y * 32,
+  };
+  const targetDirectionEnd = {
+    x: targetCoin.x + lineCentersDir.x * 150,
+    y: targetCoin.y + lineCentersDir.y * 150,
+  };
+  const lineAimEnd = {
+    x: ghostCenter.x + dir.x * 210,
+    y: ghostCenter.y + dir.y * 210,
+  };
+  const lineAimStart = {
+    x: ghostCenter.x - dir.x * 55,
+    y: ghostCenter.y - dir.y * 55,
+  };
+
+  ctx.save();
+  ctx.strokeStyle = 'rgba(120, 120, 120, 0.6)';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 6]);
+  ctx.beginPath();
+  ctx.arc(ghostCenter.x, ghostCenter.y, striker.r, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  drawDashedSegment(lineCentersStart, targetCoin, '#00bf6f', [5, 5], 2.1);
+  drawDashedSegment(lineAimStart, lineAimEnd, '#249dff', [7, 5], 2.4);
+  drawArrow(targetCoin, targetDirectionEnd, '#2d2d2d', 2.8);
+
+  ctx.fillStyle = '#e53935';
+  ctx.beginPath();
+  ctx.arc(contactPoint.x, contactPoint.y, 4.8, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#00bf6f';
+  ctx.beginPath();
+  ctx.arc(ghostCenter.x, ghostCenter.y, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(targetCoin.x, targetCoin.y, 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  drawGuideLabel('line of centers', ghostCenter.x - 120, ghostCenter.y - 72, '#00bf6f');
+  drawGuideLabel('imaginary ball (GB)', ghostCenter.x - 60, ghostCenter.y - striker.r - 16, '#444');
+  drawGuideLabel('contact point', contactPoint.x + 8, contactPoint.y - 8, '#ff4a4a');
+  drawGuideLabel('line of aim', lineAimEnd.x + 8, lineAimEnd.y + 4, '#249dff');
+  drawGuideLabel('target direction', targetDirectionEnd.x + 8, targetDirectionEnd.y + 3, '#2d2d2d');
+  ctx.restore();
 }
 
 function drawAimPrediction(striker, aimPoint) {
@@ -741,10 +850,6 @@ function releaseShot() {
     return;
   }
   if (!state.aiming || state.moving) return;
-  if (!state.shotPromptShownThisTurn) {
-    alert('High-level computer thinking implements algorithms that are mindful of the imaginary ball (ghost ball) in billiards.');
-    state.shotPromptShownThisTurn = true;
-  }
   const striker = state.objects.find((o) => o.type === 'striker');
   const dx = striker.x - state.aimPoint.x;
   const dy = striker.y - state.aimPoint.y;
