@@ -672,27 +672,8 @@ function triggerPocketFeedback(pocketEvents) {
 function respotCoin(coin) {
   coin.vx = 0;
   coin.vy = 0;
-  const centerX = BOARD.w / 2;
-  const centerY = BOARD.h / 2;
-  const maxAttempts = 30;
-
-  for (let i = 0; i < maxAttempts; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const radius = 24 + Math.random() * 54;
-    const testX = centerX + Math.cos(angle) * radius;
-    const testY = centerY + Math.sin(angle) * radius;
-    const collides = state.objects.some(
-      (obj) => obj !== coin && obj.active && Math.hypot(obj.x - testX, obj.y - testY) < obj.r + coin.r + 3,
-    );
-    if (!collides) {
-      coin.x = testX;
-      coin.y = testY;
-      return;
-    }
-  }
-
-  coin.x = centerX;
-  coin.y = centerY;
+  coin.x = BOARD.w / 2;
+  coin.y = BOARD.h / 2;
 }
 
 function evaluateWin() {
