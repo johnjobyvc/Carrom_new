@@ -79,6 +79,7 @@ const state = {
   shotPower: 0,
   lastShotPower: 0,
   pendingTurnSwitch: false,
+  pendingRespots: [],
   scoredThisTurn: false,
   shotPromptShownThisTurn: false,
   aiShotQueued: false,
@@ -109,6 +110,7 @@ function saveStats() {
 function resetBoard() {
   state.objects = [];
   state.pendingTurnSwitch = false;
+  state.pendingRespots = [];
 
   const centerX = BOARD.w / 2;
   const centerY = BOARD.h / 2;
@@ -159,6 +161,7 @@ function initMode(mode) {
   state.level = Number(levelSelect.value) || 1;
   state.turn = 0;
   state.pendingTurnSwitch = false;
+  state.pendingRespots = [];
   state.scoredThisTurn = false;
   state.shotPromptShownThisTurn = false;
   state.draggingStriker = false;
@@ -216,6 +219,40 @@ function switchTurn() {
   state.shotPromptShownThisTurn = false;
   state.aiShotQueued = false;
   placeStrikerForCurrentTurn(true);
+}
+
+function getCenterRespotPosition() {
+  const centerX = BOARD.w / 2;
+  const centerY = BOARD.h / 2;
+  const candidates = [
+    { x: centerX, y: centerY },
+    { x: centerX + COIN_R * 2, y: centerY },
+    { x: centerX - COIN_R * 2, y: centerY },
+    { x: centerX, y: centerY + COIN_R * 2 },
+    { x: centerX, y: centerY - COIN_R * 2 },
+  ];
+
+  for (const candidate of candidates) {
+    const overlaps = state.objects.some(
+      (o) => o.active && Math.hypot(candidate.x - o.x, candidate.y - o.y) < o.r + COIN_R + 1,
+    );
+    if (!overlaps) return candidate;
+  }
+
+  return { x: centerX, y: centerY };
+}
+
+function applyPendingRespots() {
+  if (!state.pendingRespots.length) return;
+  for (const coin of state.pendingRespots) {
+    const pos = getCenterRespotPosition();
+    coin.vx = 0;
+    coin.vy = 0;
+    coin.x = pos.x;
+    coin.y = pos.y;
+    coin.active = true;
+  }
+  state.pendingRespots = [];
 }
 
 function advanceTurnAndHandleAutomation() {
@@ -595,6 +632,7 @@ function physicsStep() {
   handlePocketing();
   state.moving = moving;
   if (!moving) {
+    applyPendingRespots();
     if (state.pendingTurnSwitch) {
       if (state.scoredThisTurn) {
         state.turnTime = levelConfig().turnTime;
@@ -639,7 +677,7 @@ function handlePocketing() {
             current.colorPocketed += 1;
           }
         } else {
-          respotCoin(o);
+          queueRespotCoin(o);
         }
         break;
       }
@@ -669,11 +707,11 @@ function triggerPocketFeedback(pocketEvents) {
   }
 }
 
-function respotCoin(coin) {
+function queueRespotCoin(coin) {
+  coin.active = false;
   coin.vx = 0;
   coin.vy = 0;
-  coin.x = BOARD.w / 2;
-  coin.y = BOARD.h / 2;
+  if (!state.pendingRespots.includes(coin)) state.pendingRespots.push(coin);
 }
 
 function evaluateWin() {
