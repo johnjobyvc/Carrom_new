@@ -15,10 +15,12 @@ const themeSelect = document.getElementById('themeSelect');
 const levelSelect = document.getElementById('levelSelect');
 const coinColorSelect = document.getElementById('coinColorSelect');
 const boardElement = document.getElementById('board');
+const onlineStatus = document.getElementById('onlineStatus');
+const copyInviteBtn = document.getElementById('copyInviteBtn');
 const MODE_NAMES_JA = {
   ai: 'AI対戦',
   local: 'ローカル対戦',
-  online: 'オンライン対戦（シミュレーション）',
+  online: 'オンライン対戦（リアルプレイヤー）',
   practice: '練習',
 };
 const COLOR_NAMES_JA = {
@@ -73,6 +75,7 @@ const state = {
   turnTime: 25,
   timerRef: null,
   moving: false,
+  wasMoving: false,
   aiming: false,
   draggingStriker: false,
   aimPoint: null,
@@ -98,6 +101,149 @@ const state = {
   },
   objects: [],
 };
+
+const online = {
+  peer: null,
+  conn: null,
+  roomId: null,
+  isHost: true,
+  connected: false,
+};
+
+function setOnlineStatus(text) {
+  if (onlineStatus) onlineStatus.textContent = `オンライン: ${text}`;
+}
+
+function buildRoomUrl(roomId) {
+  const url = new URL(window.location.href);
+  url.searchParams.set('room', roomId);
+  return url.toString();
+}
+
+function isMyOnlineTurn() {
+  if (state.mode !== 'online') return true;
+  if (!online.connected) return false;
+  return online.isHost ? state.turn === 0 : state.turn === 1;
+}
+
+function sendOnline(message) {
+  if (state.mode !== 'online' || !online.conn || !online.connected) return;
+  online.conn.send(message);
+}
+
+function serializeSnapshot() {
+  return {
+    turn: state.turn,
+    turnTime: state.turnTime,
+    players: state.players,
+    objects: state.objects,
+    moving: state.moving,
+    pendingTurnSwitch: state.pendingTurnSwitch,
+    scoredThisTurn: state.scoredThisTurn,
+    lastShotPower: state.lastShotPower,
+  };
+}
+
+function applySnapshot(snapshot) {
+  if (!snapshot) return;
+  state.turn = snapshot.turn;
+  state.turnTime = snapshot.turnTime;
+  state.players = snapshot.players;
+  state.objects = snapshot.objects;
+  state.moving = snapshot.moving;
+  state.pendingTurnSwitch = snapshot.pendingTurnSwitch;
+  state.scoredThisTurn = snapshot.scoredThisTurn;
+  state.lastShotPower = snapshot.lastShotPower;
+  state.aiming = false;
+  state.draggingStriker = false;
+  state.aimPoint = null;
+  state.shotPower = 0;
+}
+
+function broadcastSnapshot(reason='sync') {
+  sendOnline({ type: 'snapshot', reason, snapshot: serializeSnapshot() });
+}
+
+function attachOnlineConnection(conn) {
+  online.conn = conn;
+  conn.on('open', () => {
+    online.connected = true;
+    setOnlineStatus(`接続済み（ルーム: ${online.roomId}）`);
+    sendOnline({ type: 'hello', name: state.players[online.isHost ? 0 : 1].name });
+    if (online.isHost) broadcastSnapshot('initial');
+  });
+  conn.on('data', (payload) => {
+    if (!payload || typeof payload !== 'object') return;
+    if (payload.type === 'hello' && typeof payload.name === 'string' && payload.name.trim()) {
+      const remoteIndex = online.isHost ? 1 : 0;
+      state.players[remoteIndex].name = payload.name.trim();
+      renderPanels();
+      return;
+    }
+    if (payload.type === 'snapshot') {
+      applySnapshot(payload.snapshot);
+      renderPanels();
+    }
+  });
+  conn.on('close', () => {
+    online.connected = false;
+    setOnlineStatus('相手が切断しました');
+  });
+}
+
+function shutdownOnline() {
+  if (online.conn) { try { online.conn.close(); } catch (e) {} }
+  if (online.peer) { try { online.peer.destroy(); } catch (e) {} }
+  online.conn = null;
+  online.peer = null;
+  online.connected = false;
+}
+
+function initOnlineSession() {
+  shutdownOnline();
+  if (!window.Peer) {
+    setOnlineStatus('PeerJSを読み込めませんでした');
+    return;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  online.roomId = (params.get('room') || Math.random().toString(36).slice(2, 8)).toLowerCase();
+  if (!params.get('room')) {
+    params.set('room', online.roomId);
+    history.replaceState({}, '', `${location.pathname}?${params.toString()}`);
+  }
+
+  const hostId = `carrom-room-${online.roomId}`;
+  online.isHost = true;
+  setOnlineStatus(`接続準備中（ルーム: ${online.roomId}）`);
+  const hostPeer = new Peer(hostId);
+  online.peer = hostPeer;
+
+  hostPeer.on('open', () => setOnlineStatus(`待機中（ルーム: ${online.roomId}）`));
+  hostPeer.on('connection', (conn) => {
+    if (online.conn && online.conn.open) { conn.close(); return; }
+    online.isHost = true;
+    attachOnlineConnection(conn);
+  });
+
+  hostPeer.on('error', (err) => {
+    if (err.type !== 'unavailable-id') {
+      setOnlineStatus(`接続エラー: ${err.type}`);
+      return;
+    }
+    hostPeer.destroy();
+    online.isHost = false;
+    const guestPeer = new Peer();
+    online.peer = guestPeer;
+    guestPeer.on('open', () => {
+      const conn = guestPeer.connect(hostId, { reliable: true });
+      attachOnlineConnection(conn);
+      setOnlineStatus(`参加中（ルーム: ${online.roomId}）`);
+    });
+    guestPeer.on('error', (guestErr) => setOnlineStatus(`接続エラー: ${guestErr.type}`));
+  });
+}
+
 
 function levelConfig() {
   return LEVEL_SETTINGS[state.level] || LEVEL_SETTINGS[1];
@@ -177,12 +323,18 @@ function initMode(mode) {
   state.players[0].queenPocketed = 0;
   state.players[1].queenPocketed = 0;
   state.players[0].name = usernameInput.value || 'プレイヤー1';
-  state.players[1].name = mode === 'ai' ? 'AIボット' : mode === 'online' ? 'オンライン対戦相手' : 'プレイヤー2';
+  state.players[1].name = mode === 'ai' ? 'AIボット' : mode === 'online' ? 'オンライン接続中...' : 'プレイヤー2';
   modeLabel.textContent = `モード: ${MODE_NAMES_JA[mode] || mode}`;
   levelLabel.textContent = `ゲームレベル: ${state.level}`;
   resetBoard();
   startTurnTimer();
   renderPanels();
+
+  if (mode === 'online') initOnlineSession();
+  else {
+    shutdownOnline();
+    setOnlineStatus('未接続');
+  }
 }
 
 function startTurnTimer() {
@@ -258,10 +410,11 @@ function applyPendingRespots() {
 function advanceTurnAndHandleAutomation() {
   switchTurn();
   queueAiShotIfNeeded();
+  if (state.mode === 'online') broadcastSnapshot('turn');
 }
 
 function queueAiShotIfNeeded() {
-  if (!((state.mode === 'ai' || state.mode === 'online') && state.turn === 1) || state.moving || state.aiShotQueued) return;
+  if (!(state.mode === 'ai' && state.turn === 1) || state.moving || state.aiShotQueued) return;
   state.aiShotQueued = true;
   setTimeout(() => {
     if (!state.moving && state.turn === 1) aiShoot();
@@ -768,6 +921,7 @@ function resetMatchAfterWin() {
     resetBoard();
     startTurnTimer();
     renderPanels();
+    if (state.mode === 'online') broadcastSnapshot('reset');
   }, 150);
 }
 
@@ -814,6 +968,7 @@ function aiShoot() {
   state.scoredThisTurn = false;
   state.shotPromptShownThisTurn = true;
   state.moving = true;
+  if (state.mode === 'online') broadcastSnapshot('shot');
 }
 
 function renderPanels() {
@@ -844,6 +999,8 @@ function loop() {
   physicsStep();
   drawObjects();
   queueAiShotIfNeeded();
+  if (state.mode === 'online' && state.wasMoving && !state.moving) broadcastSnapshot('settled');
+  state.wasMoving = state.moving;
   renderPanels();
   requestAnimationFrame(loop);
 }
@@ -884,11 +1041,13 @@ function releaseShot() {
   state.aimPoint = null;
   state.shotPower = 0;
   state.moving = true;
+  if (state.mode === 'online') broadcastSnapshot('shot');
 }
 
 canvas.addEventListener('mousedown', (e) => {
   if (state.moving || !state.mode) return;
-  if ((state.mode === 'ai' || state.mode === 'online') && state.turn === 1) return;
+  if (state.mode === 'ai' && state.turn === 1) return;
+  if (state.mode === 'online' && !isMyOnlineTurn()) return;
   if (e.button !== 0 && e.button !== 2) return;
   const { x, y } = getCanvasCoords(e);
   const striker = state.objects.find((o) => o.type === 'striker');
@@ -952,8 +1111,10 @@ modeButtons.forEach((b) => b.addEventListener('click', () => initMode(b.dataset.
 practiceBtn.addEventListener('click', () => initMode('practice'));
 saveProfileBtn.addEventListener('click', () => {
   state.players[0].name = usernameInput.value.trim() || 'プレイヤー1';
+  localStorage.setItem('carromDeviceName', state.players[0].name);
   alert('プロフィールをローカルに保存しました。');
   renderPanels();
+  if (state.mode === 'online') sendOnline({ type: 'hello', name: state.players[online.isHost ? 0 : 1].name });
 });
 
 themeSelect.addEventListener('change', () => {
@@ -965,6 +1126,20 @@ themeSelect.addEventListener('change', () => {
 levelSelect.addEventListener('change', () => {
   levelLabel.textContent = `ゲームレベル: ${Number(levelSelect.value) || 1}`;
 });
+
+copyInviteBtn?.addEventListener('click', async () => {
+  if (!online.roomId) return;
+  const inviteUrl = buildRoomUrl(online.roomId);
+  try {
+    await navigator.clipboard.writeText(inviteUrl);
+    setOnlineStatus(`招待URLをコピーしました（${online.roomId}）`);
+  } catch (e) {
+    setOnlineStatus(`招待URL: ${inviteUrl}`);
+  }
+});
+
+usernameInput.value = localStorage.getItem('carromDeviceName') || `${(navigator.userAgentData?.platform || navigator.platform || 'PC')}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+localStorage.setItem('carromDeviceName', usernameInput.value);
 
 resetBoard();
 levelLabel.textContent = `ゲームレベル: ${state.level}`;
