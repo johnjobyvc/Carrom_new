@@ -23,8 +23,13 @@
         <div class="btn-group">
           <button data-mode="ai">AIと対戦</button>
           <button data-mode="local">ローカル対戦</button>
-          <button data-mode="online">オンライン対戦（シミュレーション）</button>
+          <button data-mode="online">オンライン対戦（リアルプレイヤー）</button>
           <button id="practiceBtn">練習</button>
+        </div>
+
+        <div class="online-tools">
+          <button id="copyInviteBtn" type="button">招待URLをコピー</button>
+          <p id="onlineStatus">オンライン: 未接続</p>
         </div>
 
         <h3>スコアボード</h3>
@@ -73,6 +78,7 @@
 
     </main>
 
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
     <script src="script.js"></script>
   </body>
 </html>

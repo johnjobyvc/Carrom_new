@@ -71,6 +71,18 @@ select {
 }
 
 .btn-group { display: grid; gap: 0.4rem; margin-bottom: 0.8rem; }
+.online-tools {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+}
+
+#onlineStatus {
+  margin: 0;
+  color: #b9d7ff;
+  font-size: 0.8rem;
+}
+
 button {
   padding: 0.45rem;
   border-radius: 6px;
