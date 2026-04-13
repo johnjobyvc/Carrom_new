@@ -17,6 +17,7 @@ const coinColorSelect = document.getElementById('coinColorSelect');
 const boardElement = document.getElementById('board');
 const onlineStatus = document.getElementById('onlineStatus');
 const copyInviteBtn = document.getElementById('copyInviteBtn');
+const startGameBtn = document.getElementById('startGameBtn');
 const MODE_NAMES_JA = {
   ai: 'AI対戦',
   local: 'ローカル対戦',
@@ -100,6 +101,7 @@ const state = {
     precisionTurns: Number(localStorage.getItem('precisionTurns') || 0),
   },
   objects: [],
+  gameStarted: false,
 };
 
 const online = {
@@ -122,8 +124,12 @@ function buildRoomUrl(roomId) {
 
 function isMyOnlineTurn() {
   if (state.mode !== 'online') return true;
-  if (!online.connected) return false;
+  if (!online.connected || !state.gameStarted) return false;
   return online.isHost ? state.turn === 0 : state.turn === 1;
+}
+
+function getLocalPlayerIndex() {
+  return online.isHost ? 0 : 1;
 }
 
 function sendOnline(message) {
@@ -141,6 +147,7 @@ function serializeSnapshot() {
     pendingTurnSwitch: state.pendingTurnSwitch,
     scoredThisTurn: state.scoredThisTurn,
     lastShotPower: state.lastShotPower,
+    gameStarted: state.gameStarted,
   };
 }
 
@@ -154,6 +161,7 @@ function applySnapshot(snapshot) {
   state.pendingTurnSwitch = snapshot.pendingTurnSwitch;
   state.scoredThisTurn = snapshot.scoredThisTurn;
   state.lastShotPower = snapshot.lastShotPower;
+  state.gameStarted = Boolean(snapshot.gameStarted);
   state.aiming = false;
   state.draggingStriker = false;
   state.aimPoint = null;
@@ -169,7 +177,7 @@ function attachOnlineConnection(conn) {
   conn.on('open', () => {
     online.connected = true;
     setOnlineStatus(`接続済み（ルーム: ${online.roomId}）`);
-    sendOnline({ type: 'hello', name: state.players[online.isHost ? 0 : 1].name });
+    sendOnline({ type: 'hello', name: state.players[getLocalPlayerIndex()].name });
     if (online.isHost) broadcastSnapshot('initial');
   });
   conn.on('data', (payload) => {
@@ -183,6 +191,10 @@ function attachOnlineConnection(conn) {
     if (payload.type === 'snapshot') {
       applySnapshot(payload.snapshot);
       renderPanels();
+      return;
+    }
+    if (payload.type === 'start-game') {
+      startCurrentGame(false);
     }
   });
   conn.on('close', () => {
@@ -312,6 +324,7 @@ function initMode(mode) {
   state.shotPromptShownThisTurn = false;
   state.draggingStriker = false;
   state.aiShotQueued = false;
+  state.gameStarted = false;
   const selectedColor = coinColorSelect.value === 'white' ? 'white' : 'black';
   const oppositeColor = selectedColor === 'black' ? 'white' : 'black';
   state.players[0].assigned = selectedColor;
@@ -327,13 +340,40 @@ function initMode(mode) {
   modeLabel.textContent = `モード: ${MODE_NAMES_JA[mode] || mode}`;
   levelLabel.textContent = `ゲームレベル: ${state.level}`;
   resetBoard();
-  startTurnTimer();
+  clearInterval(state.timerRef);
+  timerLabel.textContent = `ターンタイマー: ${levelConfig().turnTime}秒`;
   renderPanels();
 
-  if (mode === 'online') initOnlineSession();
-  else {
+  if (mode === 'online') {
+    initOnlineSession();
+    setOnlineStatus('未開始: ルーム接続後に START GAME を押してください');
+  } else {
     shutdownOnline();
     setOnlineStatus('未接続');
+    startCurrentGame(false);
+  }
+}
+
+function startCurrentGame(shouldBroadcast = true) {
+  if (!state.mode) return;
+  if (state.mode === 'online' && !online.connected) {
+    setOnlineStatus('接続が完了してから START GAME を押してください');
+    return;
+  }
+  state.gameStarted = true;
+  state.turn = 0;
+  state.pendingTurnSwitch = false;
+  state.pendingRespots = [];
+  state.scoredThisTurn = false;
+  state.shotPromptShownThisTurn = false;
+  state.aiShotQueued = false;
+  resetBoard();
+  startTurnTimer();
+  renderPanels();
+  if (state.mode === 'online') {
+    setOnlineStatus(`対戦開始（あなた: ${online.isHost ? '下側プレイヤー' : '上側プレイヤー'}）`);
+    if (shouldBroadcast && online.isHost) sendOnline({ type: 'start-game' });
+    broadcastSnapshot('start-game');
   }
 }
 
@@ -1025,7 +1065,7 @@ function releaseShot() {
     state.draggingStriker = false;
     return;
   }
-  if (!state.aiming || state.moving) return;
+  if (!state.aiming || state.moving || !state.gameStarted) return;
   const striker = state.objects.find((o) => o.type === 'striker');
   const dx = striker.x - state.aimPoint.x;
   const dy = striker.y - state.aimPoint.y;
@@ -1045,7 +1085,7 @@ function releaseShot() {
 }
 
 canvas.addEventListener('mousedown', (e) => {
-  if (state.moving || !state.mode) return;
+  if (state.moving || !state.mode || !state.gameStarted) return;
   if (state.mode === 'ai' && state.turn === 1) return;
   if (state.mode === 'online' && !isMyOnlineTurn()) return;
   if (e.button !== 0 && e.button !== 2) return;
@@ -1114,7 +1154,7 @@ saveProfileBtn.addEventListener('click', () => {
   localStorage.setItem('carromDeviceName', state.players[0].name);
   alert('プロフィールをローカルに保存しました。');
   renderPanels();
-  if (state.mode === 'online') sendOnline({ type: 'hello', name: state.players[online.isHost ? 0 : 1].name });
+  if (state.mode === 'online') sendOnline({ type: 'hello', name: state.players[getLocalPlayerIndex()].name });
 });
 
 themeSelect.addEventListener('change', () => {
@@ -1136,6 +1176,14 @@ copyInviteBtn?.addEventListener('click', async () => {
   } catch (e) {
     setOnlineStatus(`招待URL: ${inviteUrl}`);
   }
+});
+
+startGameBtn?.addEventListener('click', () => {
+  if (!state.mode) {
+    setOnlineStatus('先にゲームモードを選択してください');
+    return;
+  }
+  startCurrentGame(true);
 });
 
 usernameInput.value = localStorage.getItem('carromDeviceName') || `${(navigator.userAgentData?.platform || navigator.platform || 'PC')}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
