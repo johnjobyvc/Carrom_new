@@ -18,6 +18,9 @@ const boardElement = document.getElementById('board');
 const onlineStatus = document.getElementById('onlineStatus');
 const copyInviteBtn = document.getElementById('copyInviteBtn');
 const startGameBtn = document.getElementById('startGameBtn');
+const roomIdInput = document.getElementById('roomIdInput');
+const createRoomBtn = document.getElementById('createRoomBtn');
+const joinRoomBtn = document.getElementById('joinRoomBtn');
 const MODE_NAMES_JA = {
   ai: 'AI対戦',
   local: 'ローカル対戦',
@@ -110,6 +113,7 @@ const online = {
   roomId: null,
   isHost: true,
   connected: false,
+  roleSelected: null,
 };
 
 function setOnlineStatus(text) {
@@ -120,6 +124,13 @@ function buildRoomUrl(roomId) {
   const url = new URL(window.location.href);
   url.searchParams.set('room', roomId);
   return url.toString();
+}
+
+function sanitizeRoomId(value) {
+  return (value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9-_]/g, '')
+    .slice(0, 24);
 }
 
 function isMyOnlineTurn() {
@@ -195,6 +206,10 @@ function attachOnlineConnection(conn) {
     }
     if (payload.type === 'start-game') {
       startCurrentGame(false);
+      return;
+    }
+    if (payload.type === 'start-request' && online.isHost) {
+      startCurrentGame(true);
     }
   });
   conn.on('close', () => {
@@ -209,51 +224,53 @@ function shutdownOnline() {
   online.conn = null;
   online.peer = null;
   online.connected = false;
+  online.roleSelected = null;
 }
 
-function initOnlineSession() {
+function initOnlineSession(role, requestedRoomId = '') {
   shutdownOnline();
   if (!window.Peer) {
     setOnlineStatus('PeerJSを読み込めませんでした');
     return;
   }
 
-  const params = new URLSearchParams(window.location.search);
-  online.roomId = (params.get('room') || Math.random().toString(36).slice(2, 8)).toLowerCase();
-  if (!params.get('room')) {
-    params.set('room', online.roomId);
-    history.replaceState({}, '', `${location.pathname}?${params.toString()}`);
+  const normalizedRoomId = sanitizeRoomId(requestedRoomId || roomIdInput?.value || '');
+  if (!normalizedRoomId) {
+    setOnlineStatus('ルームIDを入力してください（英数字、-、_）');
+    return;
   }
+  online.roleSelected = role;
+  online.roomId = normalizedRoomId;
+  if (roomIdInput) roomIdInput.value = online.roomId;
+  const params = new URLSearchParams(window.location.search);
+  params.set('room', online.roomId);
+  history.replaceState({}, '', `${location.pathname}?${params.toString()}`);
 
   const hostId = `carrom-room-${online.roomId}`;
-  online.isHost = true;
-  setOnlineStatus(`接続準備中（ルーム: ${online.roomId}）`);
-  const hostPeer = new Peer(hostId);
-  online.peer = hostPeer;
-
-  hostPeer.on('open', () => setOnlineStatus(`待機中（ルーム: ${online.roomId}）`));
-  hostPeer.on('connection', (conn) => {
-    if (online.conn && online.conn.open) { conn.close(); return; }
+  if (role === 'host') {
     online.isHost = true;
+    setOnlineStatus(`ルーム作成中（${online.roomId}）`);
+    const hostPeer = new Peer(hostId);
+    online.peer = hostPeer;
+    hostPeer.on('open', () => setOnlineStatus(`待機中（ルーム: ${online.roomId}）`));
+    hostPeer.on('connection', (conn) => {
+      if (online.conn && online.conn.open) { conn.close(); return; }
+      online.isHost = true;
+      attachOnlineConnection(conn);
+    });
+    hostPeer.on('error', (err) => setOnlineStatus(`接続エラー: ${err.type}`));
+    return;
+  }
+
+  online.isHost = false;
+  setOnlineStatus(`ルーム参加中（${online.roomId}）`);
+  const guestPeer = new Peer();
+  online.peer = guestPeer;
+  guestPeer.on('open', () => {
+    const conn = guestPeer.connect(hostId, { reliable: true });
     attachOnlineConnection(conn);
   });
-
-  hostPeer.on('error', (err) => {
-    if (err.type !== 'unavailable-id') {
-      setOnlineStatus(`接続エラー: ${err.type}`);
-      return;
-    }
-    hostPeer.destroy();
-    online.isHost = false;
-    const guestPeer = new Peer();
-    online.peer = guestPeer;
-    guestPeer.on('open', () => {
-      const conn = guestPeer.connect(hostId, { reliable: true });
-      attachOnlineConnection(conn);
-      setOnlineStatus(`参加中（ルーム: ${online.roomId}）`);
-    });
-    guestPeer.on('error', (guestErr) => setOnlineStatus(`接続エラー: ${guestErr.type}`));
-  });
+  guestPeer.on('error', (guestErr) => setOnlineStatus(`接続エラー: ${guestErr.type}`));
 }
 
 
@@ -345,8 +362,9 @@ function initMode(mode) {
   renderPanels();
 
   if (mode === 'online') {
-    initOnlineSession();
-    setOnlineStatus('未開始: ルーム接続後に START GAME を押してください');
+    const urlRoom = sanitizeRoomId(new URLSearchParams(window.location.search).get('room'));
+    if (roomIdInput) roomIdInput.value = urlRoom;
+    setOnlineStatus('ルームIDを入力し、作成または参加を押してください');
   } else {
     shutdownOnline();
     setOnlineStatus('未接続');
@@ -358,6 +376,13 @@ function startCurrentGame(shouldBroadcast = true) {
   if (!state.mode) return;
   if (state.mode === 'online' && !online.connected) {
     setOnlineStatus('接続が完了してから START GAME を押してください');
+    return;
+  }
+  if (state.mode === 'online' && !online.isHost) {
+    if (shouldBroadcast) {
+      sendOnline({ type: 'start-request' });
+      setOnlineStatus('ホストに開始リクエストを送信しました');
+    }
     return;
   }
   state.gameStarted = true;
@@ -1178,6 +1203,32 @@ copyInviteBtn?.addEventListener('click', async () => {
   }
 });
 
+createRoomBtn?.addEventListener('click', () => {
+  if (state.mode !== 'online') {
+    setOnlineStatus('先にオンライン対戦モードを選択してください');
+    return;
+  }
+  const roomId = sanitizeRoomId(roomIdInput?.value);
+  if (!roomId) {
+    setOnlineStatus('ルームIDを入力してください');
+    return;
+  }
+  initOnlineSession('host', roomId);
+});
+
+joinRoomBtn?.addEventListener('click', () => {
+  if (state.mode !== 'online') {
+    setOnlineStatus('先にオンライン対戦モードを選択してください');
+    return;
+  }
+  const roomId = sanitizeRoomId(roomIdInput?.value);
+  if (!roomId) {
+    setOnlineStatus('ルームIDを入力してください');
+    return;
+  }
+  initOnlineSession('guest', roomId);
+});
+
 startGameBtn?.addEventListener('click', () => {
   if (!state.mode) {
     setOnlineStatus('先にゲームモードを選択してください');
@@ -1188,6 +1239,8 @@ startGameBtn?.addEventListener('click', () => {
 
 usernameInput.value = localStorage.getItem('carromDeviceName') || `${(navigator.userAgentData?.platform || navigator.platform || 'PC')}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 localStorage.setItem('carromDeviceName', usernameInput.value);
+const initialRoomFromUrl = sanitizeRoomId(new URLSearchParams(window.location.search).get('room'));
+if (roomIdInput && initialRoomFromUrl) roomIdInput.value = initialRoomFromUrl;
 
 resetBoard();
 levelLabel.textContent = `ゲームレベル: ${state.level}`;
