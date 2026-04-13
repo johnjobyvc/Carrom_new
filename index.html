@@ -28,6 +28,14 @@
         </div>
 
         <div class="online-tools">
+          <label>
+            ルームID
+            <input id="roomIdInput" maxlength="24" placeholder="例: carrom123" />
+          </label>
+          <div class="btn-group online-join-buttons">
+            <button id="createRoomBtn" type="button">ルーム作成（ホスト）</button>
+            <button id="joinRoomBtn" type="button">ルーム参加（ゲスト）</button>
+          </div>
           <button id="copyInviteBtn" type="button">招待URLをコピー</button>
           <button id="startGameBtn" type="button">START GAME</button>
           <p id="onlineStatus">オンライン: 未接続</p>
