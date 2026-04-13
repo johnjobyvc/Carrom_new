@@ -18,9 +18,6 @@ const boardElement = document.getElementById('board');
 const onlineStatus = document.getElementById('onlineStatus');
 const copyInviteBtn = document.getElementById('copyInviteBtn');
 const startGameBtn = document.getElementById('startGameBtn');
-const roomIdInput = document.getElementById('roomIdInput');
-const createRoomBtn = document.getElementById('createRoomBtn');
-const joinRoomBtn = document.getElementById('joinRoomBtn');
 const MODE_NAMES_JA = {
   ai: 'AI対戦',
   local: 'ローカル対戦',
@@ -120,9 +117,9 @@ function setOnlineStatus(text) {
   if (onlineStatus) onlineStatus.textContent = `オンライン: ${text}`;
 }
 
-function buildRoomUrl(roomId) {
+function buildShareUrl() {
   const url = new URL(window.location.href);
-  url.searchParams.set('room', roomId);
+  url.searchParams.delete('room');
   return url.toString();
 }
 
@@ -131,6 +128,13 @@ function sanitizeRoomId(value) {
     .toLowerCase()
     .replace(/[^a-z0-9-_]/g, '')
     .slice(0, 24);
+}
+
+function getAutoRoomId() {
+  const fromQuery = sanitizeRoomId(new URLSearchParams(window.location.search).get('room'));
+  if (fromQuery) return fromQuery;
+  const base = sanitizeRoomId(`${location.hostname}-${location.pathname.replace(/\//g, '-')}`) || 'default-room';
+  return base.slice(0, 24);
 }
 
 function isMyOnlineTurn() {
@@ -227,43 +231,9 @@ function shutdownOnline() {
   online.roleSelected = null;
 }
 
-function initOnlineSession(role, requestedRoomId = '') {
-  shutdownOnline();
-  if (!window.Peer) {
-    setOnlineStatus('PeerJSを読み込めませんでした');
-    return;
-  }
-
-  const normalizedRoomId = sanitizeRoomId(requestedRoomId || roomIdInput?.value || '');
-  if (!normalizedRoomId) {
-    setOnlineStatus('ルームIDを入力してください（英数字、-、_）');
-    return;
-  }
-  online.roleSelected = role;
-  online.roomId = normalizedRoomId;
-  if (roomIdInput) roomIdInput.value = online.roomId;
-  const params = new URLSearchParams(window.location.search);
-  params.set('room', online.roomId);
-  history.replaceState({}, '', `${location.pathname}?${params.toString()}`);
-
-  const hostId = `carrom-room-${online.roomId}`;
-  if (role === 'host') {
-    online.isHost = true;
-    setOnlineStatus(`ルーム作成中（${online.roomId}）`);
-    const hostPeer = new Peer(hostId);
-    online.peer = hostPeer;
-    hostPeer.on('open', () => setOnlineStatus(`待機中（ルーム: ${online.roomId}）`));
-    hostPeer.on('connection', (conn) => {
-      if (online.conn && online.conn.open) { conn.close(); return; }
-      online.isHost = true;
-      attachOnlineConnection(conn);
-    });
-    hostPeer.on('error', (err) => setOnlineStatus(`接続エラー: ${err.type}`));
-    return;
-  }
-
+function connectAsGuest(hostId) {
   online.isHost = false;
-  setOnlineStatus(`ルーム参加中（${online.roomId}）`);
+  setOnlineStatus(`接続中（ルーム: ${online.roomId}）`);
   const guestPeer = new Peer();
   online.peer = guestPeer;
   guestPeer.on('open', () => {
@@ -271,6 +241,38 @@ function initOnlineSession(role, requestedRoomId = '') {
     attachOnlineConnection(conn);
   });
   guestPeer.on('error', (guestErr) => setOnlineStatus(`接続エラー: ${guestErr.type}`));
+}
+
+function initOnlineSession(requestedRoomId = '') {
+  shutdownOnline();
+  if (!window.Peer) {
+    setOnlineStatus('PeerJSを読み込めませんでした');
+    return;
+  }
+
+  const normalizedRoomId = sanitizeRoomId(requestedRoomId || getAutoRoomId());
+  online.roleSelected = 'auto';
+  online.roomId = normalizedRoomId;
+
+  const hostId = `carrom-room-${online.roomId}`;
+  online.isHost = true;
+  setOnlineStatus(`マッチング準備中（ルーム: ${online.roomId}）`);
+  const hostPeer = new Peer(hostId);
+  online.peer = hostPeer;
+  hostPeer.on('open', () => setOnlineStatus(`待機中（ルーム: ${online.roomId}）`));
+  hostPeer.on('connection', (conn) => {
+    if (online.conn && online.conn.open) { conn.close(); return; }
+    online.isHost = true;
+    attachOnlineConnection(conn);
+  });
+  hostPeer.on('error', (err) => {
+    if (err.type === 'unavailable-id') {
+      try { hostPeer.destroy(); } catch (e) {}
+      connectAsGuest(hostId);
+      return;
+    }
+    setOnlineStatus(`接続エラー: ${err.type}`);
+  });
 }
 
 
@@ -362,9 +364,8 @@ function initMode(mode) {
   renderPanels();
 
   if (mode === 'online') {
-    const urlRoom = sanitizeRoomId(new URLSearchParams(window.location.search).get('room'));
-    if (roomIdInput) roomIdInput.value = urlRoom;
-    setOnlineStatus('ルームIDを入力し、作成または参加を押してください');
+    setOnlineStatus('接続中...');
+    initOnlineSession();
   } else {
     shutdownOnline();
     setOnlineStatus('未接続');
@@ -1193,40 +1194,13 @@ levelSelect.addEventListener('change', () => {
 });
 
 copyInviteBtn?.addEventListener('click', async () => {
-  if (!online.roomId) return;
-  const inviteUrl = buildRoomUrl(online.roomId);
+  const inviteUrl = buildShareUrl();
   try {
     await navigator.clipboard.writeText(inviteUrl);
-    setOnlineStatus(`招待URLをコピーしました（${online.roomId}）`);
+    setOnlineStatus('このURLをコピーしました');
   } catch (e) {
-    setOnlineStatus(`招待URL: ${inviteUrl}`);
+    setOnlineStatus(`URL: ${inviteUrl}`);
   }
-});
-
-createRoomBtn?.addEventListener('click', () => {
-  if (state.mode !== 'online') {
-    setOnlineStatus('先にオンライン対戦モードを選択してください');
-    return;
-  }
-  const roomId = sanitizeRoomId(roomIdInput?.value);
-  if (!roomId) {
-    setOnlineStatus('ルームIDを入力してください');
-    return;
-  }
-  initOnlineSession('host', roomId);
-});
-
-joinRoomBtn?.addEventListener('click', () => {
-  if (state.mode !== 'online') {
-    setOnlineStatus('先にオンライン対戦モードを選択してください');
-    return;
-  }
-  const roomId = sanitizeRoomId(roomIdInput?.value);
-  if (!roomId) {
-    setOnlineStatus('ルームIDを入力してください');
-    return;
-  }
-  initOnlineSession('guest', roomId);
 });
 
 startGameBtn?.addEventListener('click', () => {
@@ -1239,8 +1213,6 @@ startGameBtn?.addEventListener('click', () => {
 
 usernameInput.value = localStorage.getItem('carromDeviceName') || `${(navigator.userAgentData?.platform || navigator.platform || 'PC')}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 localStorage.setItem('carromDeviceName', usernameInput.value);
-const initialRoomFromUrl = sanitizeRoomId(new URLSearchParams(window.location.search).get('room'));
-if (roomIdInput && initialRoomFromUrl) roomIdInput.value = initialRoomFromUrl;
 
 resetBoard();
 levelLabel.textContent = `ゲームレベル: ${state.level}`;
