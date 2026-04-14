@@ -105,6 +105,8 @@ const online = {
   isHost: true,
   connected: false,
   roleSelected: null,
+  retryCount: 0,
+  retryTimer: null,
 };
 
 function setOnlineStatus(text) {
@@ -222,12 +224,52 @@ function attachOnlineConnection(conn) {
 }
 
 function shutdownOnline() {
+  if (online.retryTimer) {
+    clearTimeout(online.retryTimer);
+    online.retryTimer = null;
+  }
   if (online.conn) { try { online.conn.close(); } catch (e) {} }
   if (online.peer) { try { online.peer.destroy(); } catch (e) {} }
   online.conn = null;
   online.peer = null;
   online.connected = false;
   online.roleSelected = null;
+  online.retryCount = 0;
+}
+
+function beginHostSession(hostId) {
+  online.isHost = true;
+  setOnlineStatus(`マッチング準備中（ルーム: ${online.roomId}）`);
+  const hostPeer = new Peer(hostId);
+  online.peer = hostPeer;
+  hostPeer.on('open', () => {
+    online.retryCount = 0;
+    setOnlineStatus(`待機中（ルーム: ${online.roomId}）`);
+  });
+  hostPeer.on('connection', (conn) => {
+    if (online.conn && online.conn.open) { conn.close(); return; }
+    online.isHost = true;
+    attachOnlineConnection(conn);
+  });
+  hostPeer.on('error', (err) => {
+    if (err.type === 'unavailable-id' || err.type === 'invalid-id') {
+      try { hostPeer.destroy(); } catch (e) {}
+      connectAsGuest(hostId);
+      return;
+    }
+    setOnlineStatus(`接続エラー: ${err.type}`);
+  });
+}
+
+function scheduleGuestRetry(hostId) {
+  if (online.retryCount >= 4) {
+    setOnlineStatus('接続エラー: peer-unavailable（再接続上限）');
+    return;
+  }
+  online.retryCount += 1;
+  const delay = 800 * online.retryCount;
+  setOnlineStatus(`再接続中... (${online.retryCount}/4)`);
+  online.retryTimer = setTimeout(() => connectAsGuest(hostId), delay);
 }
 
 function connectAsGuest(hostId) {
@@ -239,7 +281,14 @@ function connectAsGuest(hostId) {
     const conn = guestPeer.connect(hostId, { reliable: true });
     attachOnlineConnection(conn);
   });
-  guestPeer.on('error', (guestErr) => setOnlineStatus(`接続エラー: ${guestErr.type}`));
+  guestPeer.on('error', (guestErr) => {
+    if (guestErr.type === 'peer-unavailable') {
+      try { guestPeer.destroy(); } catch (e) {}
+      scheduleGuestRetry(hostId);
+      return;
+    }
+    setOnlineStatus(`接続エラー: ${guestErr.type}`);
+  });
 }
 
 function initOnlineSession(requestedRoomId = '') {
@@ -254,24 +303,7 @@ function initOnlineSession(requestedRoomId = '') {
   online.roomId = normalizedRoomId;
 
   const hostId = `carrom-room-${online.roomId}`;
-  online.isHost = true;
-  setOnlineStatus(`マッチング準備中（ルーム: ${online.roomId}）`);
-  const hostPeer = new Peer(hostId);
-  online.peer = hostPeer;
-  hostPeer.on('open', () => setOnlineStatus(`待機中（ルーム: ${online.roomId}）`));
-  hostPeer.on('connection', (conn) => {
-    if (online.conn && online.conn.open) { conn.close(); return; }
-    online.isHost = true;
-    attachOnlineConnection(conn);
-  });
-  hostPeer.on('error', (err) => {
-    if (err.type === 'unavailable-id' || err.type === 'invalid-id') {
-      try { hostPeer.destroy(); } catch (e) {}
-      connectAsGuest(hostId);
-      return;
-    }
-    setOnlineStatus(`接続エラー: ${err.type}`);
-  });
+  beginHostSession(hostId);
 }
 
 
