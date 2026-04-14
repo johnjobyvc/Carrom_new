@@ -19,18 +19,12 @@
 
     <main class="layout">
       <section class="panel left">
-        <h2>メインメニュー</h2>
-        <div class="btn-group">
-          <button data-mode="ai">AIと対戦</button>
-          <button data-mode="local">ローカル対戦</button>
-          <button data-mode="online">オンライン対戦（リアルプレイヤー）</button>
-          <button id="practiceBtn">練習</button>
-        </div>
+        <h2>オンライン対戦</h2>
 
         <div class="online-tools">
-          <p>同じURLを開いた2人が自動でマッチングされます。</p>
+          <p>このURLを開いたプレイヤー同士で同じ盤面を共有します（2人対戦）。</p>
           <button id="copyInviteBtn" type="button">このURLをコピー</button>
-          <button id="startGameBtn" type="button">START GAME</button>
+          <button id="startGameBtn" type="button">再スタート</button>
           <p id="onlineStatus">オンライン: 未接続</p>
         </div>
 
@@ -46,13 +40,6 @@
           <select id="levelSelect">
             <option value="1">レベル1（通常）</option>
             <option value="2">レベル2（難しい）</option>
-          </select>
-        </label>
-        <label>
-          自分のコイン色
-          <select id="coinColorSelect">
-            <option value="black">黒</option>
-            <option value="white">白</option>
           </select>
         </label>
         <label>

@@ -1,8 +1,6 @@
 const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
 
-const modeButtons = document.querySelectorAll('[data-mode]');
-const practiceBtn = document.getElementById('practiceBtn');
 const modeLabel = document.getElementById('modeLabel');
 const levelLabel = document.getElementById('levelLabel');
 const turnLabel = document.getElementById('turnLabel');
@@ -13,17 +11,12 @@ const usernameInput = document.getElementById('username');
 const saveProfileBtn = document.getElementById('saveProfile');
 const themeSelect = document.getElementById('themeSelect');
 const levelSelect = document.getElementById('levelSelect');
-const coinColorSelect = document.getElementById('coinColorSelect');
 const boardElement = document.getElementById('board');
 const onlineStatus = document.getElementById('onlineStatus');
 const copyInviteBtn = document.getElementById('copyInviteBtn');
 const startGameBtn = document.getElementById('startGameBtn');
-const ONLINE_PUBLIC_URL = 'http://anotete.testing-web.com/matsuno/temp/game/online/';
 const MODE_NAMES_JA = {
-  ai: 'AI対戦',
-  local: 'ローカル対戦',
   online: 'オンライン対戦（リアルプレイヤー）',
-  practice: '練習',
 };
 const COLOR_NAMES_JA = {
   black: '黒',
@@ -119,8 +112,8 @@ function setOnlineStatus(text) {
 }
 
 function buildShareUrl() {
-  const inviteUrl = new URL(ONLINE_PUBLIC_URL);
-  inviteUrl.searchParams.set('mode', 'online');
+  const inviteUrl = new URL(window.location.href);
+  inviteUrl.search = '';
   inviteUrl.searchParams.set('room', getAutoRoomId());
   return inviteUrl.toString();
 }
@@ -135,7 +128,7 @@ function sanitizeRoomId(value) {
 function getAutoRoomId() {
   const fromQuery = sanitizeRoomId(new URLSearchParams(window.location.search).get('room'));
   if (fromQuery) return fromQuery;
-  const base = sanitizeRoomId(`${location.hostname}-${location.pathname.replace(/\//g, '-')}`) || 'default-room';
+  const base = sanitizeRoomId(`${location.host || 'local'}-${location.pathname.replace(/\//g, '-')}`) || 'default-room';
   return base.slice(0, 24);
 }
 
@@ -195,7 +188,11 @@ function attachOnlineConnection(conn) {
     online.connected = true;
     setOnlineStatus(`接続済み（ルーム: ${online.roomId}）`);
     sendOnline({ type: 'hello', name: state.players[getLocalPlayerIndex()].name });
-    if (online.isHost) broadcastSnapshot('initial');
+    if (online.isHost && !state.gameStarted) {
+      startCurrentGame(false);
+    } else if (online.isHost) {
+      broadcastSnapshot('initial');
+    }
   });
   conn.on('data', (payload) => {
     if (!payload || typeof payload !== 'object') return;
@@ -268,7 +265,7 @@ function initOnlineSession(requestedRoomId = '') {
     attachOnlineConnection(conn);
   });
   hostPeer.on('error', (err) => {
-    if (err.type === 'unavailable-id') {
+    if (err.type === 'unavailable-id' || err.type === 'invalid-id') {
       try { hostPeer.destroy(); } catch (e) {}
       connectAsGuest(hostId);
       return;
@@ -336,18 +333,6 @@ function clampStrikerX(x) {
 }
 
 function initMode(mode) {
-  if (mode === 'online') {
-    const current = new URL(window.location.href);
-    const onlineUrl = new URL(ONLINE_PUBLIC_URL);
-    const isOnlineHostPage =
-      current.origin === onlineUrl.origin &&
-      current.pathname.replace(/\/+$/, '') === onlineUrl.pathname.replace(/\/+$/, '');
-    if (!isOnlineHostPage) {
-      window.location.href = buildShareUrl();
-      return;
-    }
-  }
-
   state.mode = mode;
   state.level = Number(levelSelect.value) || 1;
   state.turn = 0;
@@ -358,7 +343,7 @@ function initMode(mode) {
   state.draggingStriker = false;
   state.aiShotQueued = false;
   state.gameStarted = false;
-  const selectedColor = coinColorSelect.value === 'white' ? 'white' : 'black';
+  const selectedColor = 'black';
   const oppositeColor = selectedColor === 'black' ? 'white' : 'black';
   state.players[0].assigned = selectedColor;
   state.players[1].assigned = oppositeColor;
@@ -369,7 +354,7 @@ function initMode(mode) {
   state.players[0].queenPocketed = 0;
   state.players[1].queenPocketed = 0;
   state.players[0].name = usernameInput.value || 'プレイヤー1';
-  state.players[1].name = mode === 'ai' ? 'AIボット' : mode === 'online' ? 'オンライン接続中...' : 'プレイヤー2';
+  state.players[1].name = 'オンライン接続中...';
   modeLabel.textContent = `モード: ${MODE_NAMES_JA[mode] || mode}`;
   levelLabel.textContent = `ゲームレベル: ${state.level}`;
   resetBoard();
@@ -377,14 +362,8 @@ function initMode(mode) {
   timerLabel.textContent = `ターンタイマー: ${levelConfig().turnTime}秒`;
   renderPanels();
 
-  if (mode === 'online') {
-    setOnlineStatus('接続中...');
-    initOnlineSession();
-  } else {
-    shutdownOnline();
-    setOnlineStatus('未接続');
-    startCurrentGame(false);
-  }
+  setOnlineStatus('接続中...');
+  initOnlineSession();
 }
 
 function startCurrentGame(shouldBroadcast = true) {
@@ -393,7 +372,7 @@ function startCurrentGame(shouldBroadcast = true) {
     setOnlineStatus('接続が完了してから START GAME を押してください');
     return;
   }
-  if (state.mode === 'online' && !online.isHost) {
+  if (!online.isHost) {
     if (shouldBroadcast) {
       sendOnline({ type: 'start-request' });
       setOnlineStatus('ホストに開始リクエストを送信しました');
@@ -410,11 +389,9 @@ function startCurrentGame(shouldBroadcast = true) {
   resetBoard();
   startTurnTimer();
   renderPanels();
-  if (state.mode === 'online') {
-    setOnlineStatus(`対戦開始（あなた: ${online.isHost ? '下側プレイヤー' : '上側プレイヤー'}）`);
-    if (shouldBroadcast && online.isHost) sendOnline({ type: 'start-game' });
-    broadcastSnapshot('start-game');
-  }
+  setOnlineStatus(`対戦開始（あなた: ${online.isHost ? '下側プレイヤー' : '上側プレイヤー'}）`);
+  if (shouldBroadcast && online.isHost) sendOnline({ type: 'start-game' });
+  broadcastSnapshot('start-game');
 }
 
 function startTurnTimer() {
@@ -493,17 +470,7 @@ function respotCoinAtCenter(coin) {
 
 function advanceTurnAndHandleAutomation() {
   switchTurn();
-  queueAiShotIfNeeded();
-  if (state.mode === 'online') broadcastSnapshot('turn');
-}
-
-function queueAiShotIfNeeded() {
-  if (!(state.mode === 'ai' && state.turn === 1) || state.moving || state.aiShotQueued) return;
-  state.aiShotQueued = true;
-  setTimeout(() => {
-    if (!state.moving && state.turn === 1) aiShoot();
-    state.aiShotQueued = false;
-  }, 180);
+  broadcastSnapshot('turn');
 }
 
 function pockets() {
@@ -1002,54 +969,8 @@ function resetMatchAfterWin() {
     resetBoard();
     startTurnTimer();
     renderPanels();
-    if (state.mode === 'online') broadcastSnapshot('reset');
+    broadcastSnapshot('reset');
   }, 150);
-}
-
-function aiShoot() {
-  const striker = state.objects.find((o) => o.type === 'striker');
-  const aiPlayer = state.players[1];
-  const targets = state.objects.filter(
-    (o) => o.active && (o.type === aiPlayer.assigned || o.type === 'queen'),
-  );
-  if (!targets.length) return;
-  const pks = pockets();
-  const bestTarget = targets
-    .map((coin) => {
-      const nearestPocketDist = pks.reduce((best, pocket) => {
-        const dist = Math.hypot(coin.x - pocket.x, coin.y - pocket.y);
-        return Math.min(best, dist);
-      }, Number.POSITIVE_INFINITY);
-      return { coin, nearestPocketDist };
-    })
-    .sort((a, b) => a.nearestPocketDist - b.nearestPocketDist)[0].coin;
-  const randomTarget = targets[Math.floor(Math.random() * targets.length)];
-  const target = Math.random() < levelConfig().aiRandomness ? randomTarget : bestTarget;
-  const ghostDistance = STRIKER_R + target.r;
-  const nearestPocket = pks
-    .map((pocket) => ({ pocket, d: Math.hypot(target.x - pocket.x, target.y - pocket.y) }))
-    .sort((a, b) => a.d - b.d)[0].pocket;
-  const toPocketX = nearestPocket.x - target.x;
-  const toPocketY = nearestPocket.y - target.y;
-  const toPocketD = Math.max(1, Math.hypot(toPocketX, toPocketY));
-  const ghostX = target.x - (toPocketX / toPocketD) * ghostDistance;
-  const ghostY = target.y - (toPocketY / toPocketD) * ghostDistance;
-
-  striker.x = clampStrikerX(ghostX);
-  striker.y = currentStrikerLineY();
-
-  const dx = ghostX - striker.x;
-  const dy = ghostY - striker.y;
-  const d = Math.max(1, Math.hypot(dx, dy));
-  const pwr = Math.min(20, 11 + Math.random() * 5 + levelConfig().aiPowerBoost);
-  striker.vx = (dx / d) * pwr;
-  striker.vy = (dy / d) * pwr;
-  state.lastShotPower = pwr;
-  state.pendingTurnSwitch = true;
-  state.scoredThisTurn = false;
-  state.shotPromptShownThisTurn = true;
-  state.moving = true;
-  if (state.mode === 'online') broadcastSnapshot('shot');
 }
 
 function renderPanels() {
@@ -1079,8 +1000,7 @@ function loop() {
   drawBoard();
   physicsStep();
   drawObjects();
-  queueAiShotIfNeeded();
-  if (state.mode === 'online' && state.wasMoving && !state.moving) broadcastSnapshot('settled');
+  if (state.wasMoving && !state.moving) broadcastSnapshot('settled');
   state.wasMoving = state.moving;
   renderPanels();
   requestAnimationFrame(loop);
@@ -1125,22 +1045,14 @@ function releaseShot() {
   if (state.mode === 'online') broadcastSnapshot('shot');
 }
 
-canvas.addEventListener('mousedown', (e) => {
+function startInteraction(pointer) {
   if (state.moving || !state.mode || !state.gameStarted) return;
-  if (state.mode === 'ai' && state.turn === 1) return;
-  if (state.mode === 'online' && !isMyOnlineTurn()) return;
-  if (e.button !== 0 && e.button !== 2) return;
-  const { x, y } = getCanvasCoords(e);
+  if (!isMyOnlineTurn()) return;
+  const { x, y } = getCanvasCoords(pointer);
   const striker = state.objects.find((o) => o.type === 'striker');
   const lineY = currentStrikerLineY();
 
   if (Math.hypot(x - striker.x, y - striker.y) <= striker.r + 8) {
-    if (e.button === 0) {
-      state.aiming = true;
-      state.aimPoint = { x, y };
-      state.shotPower = calculateShotPowerPercent(striker, state.aimPoint);
-      return;
-    }
     if (Math.abs(striker.y - lineY) <= 1 && Math.abs(y - lineY) <= 24) {
       state.draggingStriker = true;
     } else {
@@ -1157,7 +1069,7 @@ canvas.addEventListener('mousedown', (e) => {
     state.draggingStriker = true;
     return;
   }
-});
+}
 
 function updateAimFromPointer(e) {
   const { x, y } = getCanvasCoords(e);
@@ -1172,11 +1084,15 @@ function updateAimFromPointer(e) {
   state.shotPower = calculateShotPowerPercent(striker, state.aimPoint);
 }
 
-canvas.addEventListener('mousemove', updateAimFromPointer);
-window.addEventListener('mousemove', updateAimFromPointer);
-
-canvas.addEventListener('mouseup', releaseShot);
-window.addEventListener('mouseup', releaseShot);
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  startInteraction(e);
+});
+canvas.addEventListener('pointermove', updateAimFromPointer);
+window.addEventListener('pointermove', updateAimFromPointer);
+canvas.addEventListener('pointerup', releaseShot);
+window.addEventListener('pointerup', releaseShot);
+window.addEventListener('pointercancel', releaseShot);
 window.addEventListener('blur', () => {
   state.draggingStriker = false;
   state.aiming = false;
@@ -1188,14 +1104,12 @@ canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
 }, { passive: false });
 
-modeButtons.forEach((b) => b.addEventListener('click', () => initMode(b.dataset.mode)));
-practiceBtn.addEventListener('click', () => initMode('practice'));
 saveProfileBtn.addEventListener('click', () => {
   state.players[0].name = usernameInput.value.trim() || 'プレイヤー1';
   localStorage.setItem('carromDeviceName', state.players[0].name);
   alert('プロフィールをローカルに保存しました。');
   renderPanels();
-  if (state.mode === 'online') sendOnline({ type: 'hello', name: state.players[getLocalPlayerIndex()].name });
+  sendOnline({ type: 'hello', name: state.players[getLocalPlayerIndex()].name });
 });
 
 themeSelect.addEventListener('change', () => {
@@ -1219,10 +1133,6 @@ copyInviteBtn?.addEventListener('click', async () => {
 });
 
 startGameBtn?.addEventListener('click', () => {
-  if (!state.mode) {
-    setOnlineStatus('先にゲームモードを選択してください');
-    return;
-  }
   startCurrentGame(true);
 });
 
@@ -1235,6 +1145,7 @@ renderPanels();
 loop();
 
 const params = new URLSearchParams(window.location.search);
-if (params.get('mode') === 'online') {
-  initMode('online');
-}
+if (!params.get('room')) params.set('room', getAutoRoomId());
+const nextUrl = `${window.location.pathname}?${params.toString()}`;
+window.history.replaceState({}, '', nextUrl);
+initMode('online');
