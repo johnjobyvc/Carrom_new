@@ -463,14 +463,18 @@ function getCenterRespotPosition() {
 function applyPendingRespots() {
   if (!state.pendingRespots.length) return;
   for (const coin of state.pendingRespots) {
-    const pos = getCenterRespotPosition();
-    coin.vx = 0;
-    coin.vy = 0;
-    coin.x = pos.x;
-    coin.y = pos.y;
-    coin.active = true;
+    respotCoinAtCenter(coin);
   }
   state.pendingRespots = [];
+}
+
+function respotCoinAtCenter(coin) {
+  const pos = getCenterRespotPosition();
+  coin.vx = 0;
+  coin.vy = 0;
+  coin.x = pos.x;
+  coin.y = pos.y;
+  coin.active = true;
 }
 
 function advanceTurnAndHandleAutomation() {
@@ -927,10 +931,7 @@ function triggerPocketFeedback(pocketEvents) {
 }
 
 function queueRespotCoin(coin) {
-  coin.active = false;
-  coin.vx = 0;
-  coin.vy = 0;
-  if (!state.pendingRespots.includes(coin)) state.pendingRespots.push(coin);
+  respotCoinAtCenter(coin);
 }
 
 function evaluateWin() {
