@@ -18,6 +18,7 @@ const boardElement = document.getElementById('board');
 const onlineStatus = document.getElementById('onlineStatus');
 const copyInviteBtn = document.getElementById('copyInviteBtn');
 const startGameBtn = document.getElementById('startGameBtn');
+const ONLINE_PUBLIC_URL = 'http://anotete.testing-web.com/matsuno/temp/game/online/';
 const MODE_NAMES_JA = {
   ai: 'AI対戦',
   local: 'ローカル対戦',
@@ -118,9 +119,10 @@ function setOnlineStatus(text) {
 }
 
 function buildShareUrl() {
-  const url = new URL(window.location.href);
-  url.searchParams.delete('room');
-  return url.toString();
+  const inviteUrl = new URL(ONLINE_PUBLIC_URL);
+  inviteUrl.searchParams.set('mode', 'online');
+  inviteUrl.searchParams.set('room', getAutoRoomId());
+  return inviteUrl.toString();
 }
 
 function sanitizeRoomId(value) {
@@ -334,6 +336,18 @@ function clampStrikerX(x) {
 }
 
 function initMode(mode) {
+  if (mode === 'online') {
+    const current = new URL(window.location.href);
+    const onlineUrl = new URL(ONLINE_PUBLIC_URL);
+    const isOnlineHostPage =
+      current.origin === onlineUrl.origin &&
+      current.pathname.replace(/\/+$/, '') === onlineUrl.pathname.replace(/\/+$/, '');
+    if (!isOnlineHostPage) {
+      window.location.href = buildShareUrl();
+      return;
+    }
+  }
+
   state.mode = mode;
   state.level = Number(levelSelect.value) || 1;
   state.turn = 0;
@@ -1219,3 +1233,8 @@ resetBoard();
 levelLabel.textContent = `ゲームレベル: ${state.level}`;
 renderPanels();
 loop();
+
+const params = new URLSearchParams(window.location.search);
+if (params.get('mode') === 'online') {
+  initMode('online');
+}
