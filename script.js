@@ -109,8 +109,16 @@ const online = {
   retryTimer: null,
 };
 
+function updateStartButtonState() {
+  if (!startGameBtn) return;
+  const canStart = state.mode === 'online' && online.connected;
+  startGameBtn.disabled = !canStart;
+  startGameBtn.textContent = state.gameStarted ? 'RESTART GAME' : 'START GAME';
+}
+
 function setOnlineStatus(text) {
   if (onlineStatus) onlineStatus.textContent = `オンライン: ${text}`;
+  updateStartButtonState();
 }
 
 function buildShareUrl() {
@@ -190,11 +198,10 @@ function attachOnlineConnection(conn) {
     online.connected = true;
     setOnlineStatus(`接続済み（ルーム: ${online.roomId}）`);
     sendOnline({ type: 'hello', name: state.players[getLocalPlayerIndex()].name });
-    if (online.isHost && !state.gameStarted) {
-      startCurrentGame(false);
-    } else if (online.isHost) {
+    if (online.isHost && state.gameStarted) {
       broadcastSnapshot('initial');
     }
+    updateStartButtonState();
   });
   conn.on('data', (payload) => {
     if (!payload || typeof payload !== 'object') return;
@@ -220,6 +227,7 @@ function attachOnlineConnection(conn) {
   conn.on('close', () => {
     online.connected = false;
     setOnlineStatus('相手が切断しました');
+    updateStartButtonState();
   });
 }
 
@@ -235,6 +243,7 @@ function shutdownOnline() {
   online.connected = false;
   online.roleSelected = null;
   online.retryCount = 0;
+  updateStartButtonState();
 }
 
 function beginHostSession(hostId) {
@@ -393,6 +402,7 @@ function initMode(mode) {
   clearInterval(state.timerRef);
   timerLabel.textContent = `ターンタイマー: ${levelConfig().turnTime}秒`;
   renderPanels();
+  updateStartButtonState();
 
   setOnlineStatus('接続中...');
   initOnlineSession();
@@ -424,6 +434,7 @@ function startCurrentGame(shouldBroadcast = true) {
   setOnlineStatus(`対戦開始（あなた: ${online.isHost ? '下側プレイヤー' : '上側プレイヤー'}）`);
   if (shouldBroadcast && online.isHost) sendOnline({ type: 'start-game' });
   broadcastSnapshot('start-game');
+  updateStartButtonState();
 }
 
 function startTurnTimer() {
@@ -1015,6 +1026,7 @@ function renderPanels() {
     .join('');
 
   updateAchievements();
+  updateStartButtonState();
 }
 
 function updateAchievements() {
