@@ -414,11 +414,9 @@ function startCurrentGame(shouldBroadcast = true) {
     setOnlineStatus('接続が完了してから START GAME を押してください');
     return;
   }
-  if (!online.isHost) {
-    if (shouldBroadcast) {
-      sendOnline({ type: 'start-request' });
-      setOnlineStatus('ホストに開始リクエストを送信しました');
-    }
+  if (!online.isHost && shouldBroadcast) {
+    sendOnline({ type: 'start-request' });
+    setOnlineStatus('ホストに開始リクエストを送信しました');
     return;
   }
   state.gameStarted = true;
