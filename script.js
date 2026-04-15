@@ -35,7 +35,7 @@ const STRIKER_LINE_MAX_X = BOARD.w / 2 + STRIKER_GUIDE_DISTANCE;
 const BASE_FRICTION = 0.991;
 const STOP_EPS = 0.08;
 const BASE_ASSIST_POWER_THRESHOLD = 6.5;
-const MAX_SHOT_POWER_PERCENT = 100;
+const MAX_SHOT_POWER_PERCENT = 200;
 const MAX_STRIKER_SHOT_SPEED = 22;
 const MAX_SHOT_DRAG_DISTANCE = 260;
 const EXTRA_AIM_DRAG_SPACE = 220;
@@ -79,6 +79,11 @@ const state = {
   pendingTurnSwitch: false,
   pendingRespots: [],
   scoredThisTurn: false,
+  currentShot: {
+    ownColorPocketed: 0,
+    opponentColorPocketed: 0,
+  },
+  queenCoverPending: null,
   shotPromptShownThisTurn: false,
   aiShotQueued: false,
   players: [
@@ -166,6 +171,8 @@ function serializeSnapshot() {
     moving: state.moving,
     pendingTurnSwitch: state.pendingTurnSwitch,
     scoredThisTurn: state.scoredThisTurn,
+    currentShot: state.currentShot,
+    queenCoverPending: state.queenCoverPending,
     lastShotPower: state.lastShotPower,
     gameStarted: state.gameStarted,
   };
@@ -180,6 +187,8 @@ function applySnapshot(snapshot) {
   state.moving = snapshot.moving;
   state.pendingTurnSwitch = snapshot.pendingTurnSwitch;
   state.scoredThisTurn = snapshot.scoredThisTurn;
+  state.currentShot = snapshot.currentShot || { ownColorPocketed: 0, opponentColorPocketed: 0 };
+  state.queenCoverPending = snapshot.queenCoverPending || null;
   state.lastShotPower = snapshot.lastShotPower;
   state.gameStarted = Boolean(snapshot.gameStarted);
   state.aiming = false;
@@ -328,6 +337,8 @@ function resetBoard() {
   state.objects = [];
   state.pendingTurnSwitch = false;
   state.pendingRespots = [];
+  state.queenCoverPending = null;
+  state.currentShot = { ownColorPocketed: 0, opponentColorPocketed: 0 };
 
   const centerX = BOARD.w / 2;
   const centerY = BOARD.h / 2;
@@ -380,6 +391,8 @@ function initMode(mode) {
   state.pendingTurnSwitch = false;
   state.pendingRespots = [];
   state.scoredThisTurn = false;
+  state.queenCoverPending = null;
+  state.currentShot = { ownColorPocketed: 0, opponentColorPocketed: 0 };
   state.shotPromptShownThisTurn = false;
   state.draggingStriker = false;
   state.aiShotQueued = false;
@@ -424,6 +437,8 @@ function startCurrentGame(shouldBroadcast = true) {
   state.pendingTurnSwitch = false;
   state.pendingRespots = [];
   state.scoredThisTurn = false;
+  state.queenCoverPending = null;
+  state.currentShot = { ownColorPocketed: 0, opponentColorPocketed: 0 };
   state.shotPromptShownThisTurn = false;
   state.aiShotQueued = false;
   resetBoard();
@@ -466,6 +481,7 @@ function switchTurn() {
   state.aimPoint = null;
   state.shotPower = 0;
   state.scoredThisTurn = false;
+  state.currentShot = { ownColorPocketed: 0, opponentColorPocketed: 0 };
   state.shotPromptShownThisTurn = false;
   state.aiShotQueued = false;
   placeStrikerForCurrentTurn(true);
@@ -597,7 +613,8 @@ function drawObjects() {
     const meterY = boxY - 4;
     ctx.fillStyle = '#132437cc';
     ctx.fillRect(meterX, meterY, meterWidth, meterHeight);
-    const fillHeight = (Math.max(0, Math.min(100, state.shotPower)) / 100) * meterHeight;
+    const fillHeight =
+      (Math.max(0, Math.min(MAX_SHOT_POWER_PERCENT, state.shotPower)) / MAX_SHOT_POWER_PERCENT) * meterHeight;
     ctx.fillStyle = '#22d3ee';
     ctx.fillRect(meterX, meterY + meterHeight - fillHeight, meterWidth, fillHeight);
   }
@@ -880,6 +897,7 @@ function physicsStep() {
     applyPendingRespots();
     if (state.pendingTurnSwitch) {
       if (state.scoredThisTurn) {
+        resolveQueenCoverAfterShot();
         state.turnTime = levelConfig().turnTime;
         state.aiming = false;
         state.draggingStriker = false;
@@ -910,18 +928,25 @@ function handlePocketing() {
         const current = state.players[state.turn];
         const isOwnColor = o.type === current.assigned;
         const isQueen = o.type === 'queen';
-        if (isOwnColor || isQueen) {
+        if (isQueen) {
+          const canPocketQueen = current.score >= 1;
+          if (!canPocketQueen) {
+            queueRespotCoin(o);
+            break;
+          }
           o.active = false;
           pocketedThisTurn += 1;
           state.scoredThisTurn = true;
-          if (isQueen) {
-            current.score += 2;
-            current.queenPocketed += 1;
-          } else {
-            current.score += 1;
-            current.colorPocketed += 1;
-          }
+          state.queenCoverPending = { playerIndex: state.turn, coverAttemptStarted: false };
+        } else if (isOwnColor) {
+          o.active = false;
+          pocketedThisTurn += 1;
+          state.scoredThisTurn = true;
+          state.currentShot.ownColorPocketed += 1;
+          current.score += 1;
+          current.colorPocketed += 1;
         } else {
+          state.currentShot.opponentColorPocketed += 1;
           queueRespotCoin(o);
         }
         break;
@@ -956,7 +981,35 @@ function queueRespotCoin(coin) {
   respotCoinAtCenter(coin);
 }
 
+function respotQueenAtCenter() {
+  const queen = state.objects.find((o) => o.type === 'queen');
+  if (!queen) return;
+  respotCoinAtCenter(queen);
+}
+
+function resolveQueenCoverAfterShot() {
+  const queenCover = state.queenCoverPending;
+  if (!queenCover) return;
+  if (queenCover.playerIndex !== state.turn) return;
+  if (!queenCover.coverAttemptStarted) return;
+
+  const currentPlayer = state.players[state.turn];
+  const coveredWithOwnColor = state.currentShot.ownColorPocketed > 0;
+  const pocketedOpponentColor = state.currentShot.opponentColorPocketed > 0;
+
+  if (coveredWithOwnColor && !pocketedOpponentColor) {
+    currentPlayer.score += 5;
+    currentPlayer.queenPocketed += 1;
+  } else {
+    respotQueenAtCenter();
+  }
+  state.queenCoverPending = null;
+  evaluateWin();
+}
+
 function evaluateWin() {
+  if (state.queenCoverPending && state.queenCoverPending.playerIndex === state.turn) return;
+
   const remainingAssignedByPlayer = state.players.map((player) =>
     state.objects.filter((o) => o.active && o.type === player.assigned).length,
   );
@@ -1078,6 +1131,13 @@ function releaseShot() {
   striker.vx = (dx / d) * pwr;
   striker.vy = (dy / d) * pwr;
   state.lastShotPower = pwr;
+  state.currentShot = {
+    ownColorPocketed: 0,
+    opponentColorPocketed: 0,
+  };
+  if (state.queenCoverPending && state.queenCoverPending.playerIndex === state.turn) {
+    state.queenCoverPending.coverAttemptStarted = true;
+  }
   state.pendingTurnSwitch = true;
   state.scoredThisTurn = false;
   state.aiming = false;
