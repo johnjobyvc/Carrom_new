@@ -860,7 +860,7 @@ function getCanvasCoords(e) {
 
 function calculateShotPowerPercent(striker, aimPoint) {
   const dragDistance = Math.hypot(striker.x - aimPoint.x, striker.y - aimPoint.y);
-  return Math.min(MAX_SHOT_POWER_PERCENT, (dragDistance / MAX_SHOT_DRAG_DISTANCE) * MAX_SHOT_POWER_PERCENT);
+  return (dragDistance / MAX_SHOT_DRAG_DISTANCE) * MAX_SHOT_POWER_PERCENT;
 }
 
 function releaseShot() {
