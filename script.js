@@ -118,7 +118,7 @@ function updateStartButtonState() {
   if (!startGameBtn) return;
   const canStart = state.mode === 'online' && online.connected;
   startGameBtn.disabled = !canStart;
-  startGameBtn.textContent = state.gameStarted ? 'RESTART GAME' : 'START GAME';
+  startGameBtn.textContent = state.gameStarted ? 'ゲーム再開' : 'ゲーム開始';
 }
 
 function setOnlineStatus(text) {
@@ -424,7 +424,7 @@ function initMode(mode) {
 function startCurrentGame(shouldBroadcast = true) {
   if (!state.mode) return;
   if (state.mode === 'online' && !online.connected) {
-    setOnlineStatus('接続が完了してから START GAME を押してください');
+    setOnlineStatus('接続完了後に「ゲーム開始」を押してください');
     return;
   }
   if (!online.isHost && shouldBroadcast) {
@@ -1206,6 +1206,18 @@ canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
 }, { passive: false });
 
+
+window.addEventListener('pageshow', (event) => {
+  if (event.persisted) {
+    usernameInput.value = '';
+    localStorage.removeItem('carromDeviceName');
+  }
+});
+
+window.addEventListener('beforeunload', () => {
+  usernameInput.value = '';
+});
+
 saveProfileBtn.addEventListener('click', () => {
   state.players[0].name = usernameInput.value.trim() || 'プレイヤー1';
   localStorage.setItem('carromDeviceName', state.players[0].name);
@@ -1238,8 +1250,8 @@ startGameBtn?.addEventListener('click', () => {
   startCurrentGame(true);
 });
 
-usernameInput.value = localStorage.getItem('carromDeviceName') || `${(navigator.userAgentData?.platform || navigator.platform || 'PC')}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-localStorage.setItem('carromDeviceName', usernameInput.value);
+usernameInput.value = '';
+localStorage.removeItem('carromDeviceName');
 
 resetBoard();
 levelLabel.textContent = `ゲームレベル: ${state.level}`;
