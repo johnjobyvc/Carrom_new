@@ -11,7 +11,7 @@
       <div class="profile">
         <label>
           ユーザー名
-          <input id="username" maxlength="16" value="プレイヤー" />
+          <input id="username" maxlength="16" value="プレイヤー" autocomplete="off" />
         </label>
         <button id="saveProfile">プロフィールを保存</button>
       </div>
@@ -24,7 +24,7 @@
         <div class="online-tools">
           <p>このURLを開いたプレイヤー同士で同じ盤面を共有します（2人対戦）。</p>
           <button id="copyInviteBtn" type="button">このURLをコピー</button>
-          <button id="startGameBtn" type="button" disabled>START GAME</button>
+          <button id="startGameBtn" type="button" disabled>ゲーム開始</button>
           <p id="onlineStatus">オンライン: 未接続</p>
         </div>
 
@@ -55,7 +55,7 @@
       <section class="board-wrap">
         <div class="board-main">
           <canvas id="board" width="860" height="860" aria-label="カロム盤"></canvas>
-          <p class="hint">ストライカーをドラッグして狙うと、Imaginary ball / Ghost ball (GB) ガイド（line of centers・contact point・line of aim・target direction）が表示されます。</p>
+          <p class="hint">ストライカーをドラッグして狙うと、仮想ボール（ゴーストボール）ガイド（中心線・接点・狙い線・進行方向）が表示されます。</p>
         </div>
         <aside class="game-meta" aria-label="ゲーム状態">
           <div id="modeLabel">モード: 未開始</div>
